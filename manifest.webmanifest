@@ -1,0 +1,75 @@
+{
+  "name": "FreshMart POS",
+  "short_name": "FreshMart POS",
+  "description": "Grocery point of sale with billing, inventory and QR codes. Works offline and syncs with Google Sheets.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f3f5f8",
+  "theme_color": "#0f9d58",
+  "categories": [
+    "business",
+    "productivity",
+    "shopping"
+  ],
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "New sale",
+      "short_name": "Sale",
+      "url": "./index.html#/pos",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Inventory",
+      "url": "./index.html#/inventory",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Invoices",
+      "url": "./index.html#/sales",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ],
+  "lang": "en-IN",
+  "prefer_related_applications": false,
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ]
+}

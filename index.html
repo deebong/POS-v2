@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FreshMart POS — Grocery Point of Sale</title>
+    <meta name="description" content="Grocery POS with billing, inventory and QR codes. Works offline on your PC and syncs with Google Sheets." />
+    <meta name="theme-color" content="#0f9d58" />
+    <meta name="application-name" content="FreshMart POS" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="FreshMart POS" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="css/styles.css" />
+    <script>
+      /* Apply the store's colours and the docked/undocked menu before anything is drawn (no flash). */
+      (function () {
+        try {
+          var r = document.documentElement;
+          var t = JSON.parse(localStorage.getItem("pos.theme") || "null");
+          if (t && t.vars) {
+            for (var k in t.vars) r.style.setProperty(k, t.vars[k]);
+            r.setAttribute("data-sidebar", t.sidebar || "light");
+          }
+          if (localStorage.getItem("pos.navCollapsed") === "1") r.className += " nav-collapsed";
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="app" id="app">
+      <aside class="sidebar" id="sidebar">
+        <div class="brand">
+          <div class="brand-logo" id="brandLogo"></div>
+          <div>
+            <div class="brand-name" id="brandName">FreshMart</div>
+            <div class="brand-sub">Grocery POS</div>
+          </div>
+        </div>
+
+        <div class="nav-label">Store</div>
+        <nav class="nav" id="nav">
+          <a href="#/dashboard" data-route="dashboard" title="Dashboard"><span data-icon="dashboard"></span><span class="txt">Dashboard</span></a>
+          <a href="#/pos" data-route="pos" title="POS / Billing"><span data-icon="cart"></span><span class="txt">POS / Billing</span></a>
+          <a href="#/inventory" data-route="inventory" title="Inventory"><span data-icon="package"></span><span class="txt">Inventory</span></a>
+          <a href="#/labels" data-route="labels" title="QR Labels"><span data-icon="qr"></span><span class="txt">QR Labels</span></a>
+          <a href="#/sales" data-route="sales" title="Invoices"><span data-icon="receipt"></span><span class="txt">Invoices</span></a>
+          <a href="#/settings" data-route="settings" title="Settings"><span data-icon="settings"></span><span class="txt">Settings</span></a>
+        </nav>
+
+        <div class="sidebar-foot">
+          <button class="dock-btn" id="dockBtn" title="Dock the menu to give the main area more room">
+            <span data-icon="chevronsLeft"></span><span class="txt">Dock menu</span>
+          </button>
+          <div class="cashier-card">
+            <div class="avatar">AK</div>
+            <div class="meta">
+              <div class="who">Alex Kim</div>
+              <div class="role">Cashier · Counter 1</div>
+            </div>
+            <span class="online-dot" title="System online"></span>
+          </div>
+        </div>
+      </aside>
+
+      <div class="main">
+        <header class="topbar">
+          <button class="icon-btn bordered dock-top" id="dockTop" title="Dock / undock the side menu"><span data-icon="panelLeft"></span></button>
+          <div class="title-wrap">
+            <h1 id="pageTitle">Dashboard</h1>
+            <div class="sub" id="pageSub"></div>
+          </div>
+          <div class="spacer"></div>
+          <button class="btn btn-soft hidden" id="installBtn" title="Install FreshMart POS as a desktop app (adds a desktop shortcut)"><span data-icon="install"></span> Install app</button>
+          <button class="sync-pill demo" id="syncPill" title="Data source"><span class="dot"></span><span class="txt" id="syncText">This PC</span></button>
+          <button class="btn btn-outline" id="globalScan" title="Scan a product QR / barcode or an invoice QR">
+            <span data-icon="scan"></span> Scan code
+          </button>
+          <div class="clock">
+            <div class="time" id="clockTime">--:--</div>
+            <div class="date" id="clockDate"></div>
+          </div>
+        </header>
+        <div class="banner hidden" id="banner"></div>
+        <div class="install-bar hidden" id="installBar"></div>
+        <main class="view" id="view"></main>
+      </div>
+    </div>
+
+    <div id="modalRoot"></div>
+    <div id="toastRoot"></div>
+    <div id="printArea"></div>
+
+    <!-- Old browsers (Internet Explorer, Chrome < 98, Firefox < 94): explain instead of showing a blank page.
+         Deliberately written in old-style JavaScript so even IE can run it. -->
+    <script>
+      (function () {
+        var s = document.createElement("script");
+        var ok = "noModule" in s && typeof window.structuredClone === "function" && !!window.indexedDB && typeof window.Promise === "function";
+        if (ok) return;
+        var app = document.getElementById("app");
+        if (app) app.style.display = "none";
+        var box = document.createElement("div");
+        box.setAttribute("style", "font-family:Segoe UI,Arial,sans-serif;max-width:600px;margin:60px auto;padding:28px 32px;border:1px solid #e6eaf0;border-radius:16px;background:#fff;color:#0f1b2d;line-height:1.55");
+        box.innerHTML =
+          '<h2 style="margin:0 0 10px">This browser is too old for FreshMart POS</h2>' +
+          "<p>Please open this page in one of these browsers:</p>" +
+          "<ul><li><b>Google Chrome 109</b> or newer (recommended)</li><li><b>Microsoft Edge 109</b> or newer</li><li><b>Firefox 115 ESR</b> or newer</li></ul>" +
+          "<p>On Windows 7 these are the newest versions available. Internet Explorer is not supported.</p>" +
+          '<p style="color:#8593a8">Address to open: <b>' + location.href.split("#")[0] + "</b></p>";
+        document.body.appendChild(box);
+      })();
+    </script>
+    <script src="vendor/jsQR.js"></script>
+    <script src="vendor/qrcode.js"></script>
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>
