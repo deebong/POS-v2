@@ -136,6 +136,17 @@
   color: var(--primary);
 }
 
+/* Toolbar filters should keep the original compact single-row layout.
+ * The custom-select wrapper replaces the native <select>, so it needs to
+ * inherit the toolbar's fixed filter width instead of the global 100% width.
+ */
+.toolbar .custom-select,
+.label-toolbar .custom-select {
+  width: auto;
+  min-width: 160px;
+  flex: 0 0 auto;
+}
+
 @media (max-width: 640px) {
   .custom-select-menu {
     border-radius: 11px;
