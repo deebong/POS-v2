@@ -1,7 +1,7 @@
 /* FreshMart POS service worker — makes the app installable and lets it start with no internet.
  * App files are pre-cached ("app shell"); your data lives in IndexedDB, not here.
- * Bump VERSION whenever any file below changes: the app then shows an "Update" prompt. */
-const VERSION = "ci-e193bdaf11c1";
+ * Bump VERSION whenever any file below changes. Updates are activated automatically. */
+const VERSION = "ci-ae70f3c4c9d6";
 const CACHE = `freshmart-pos-${VERSION}`;
 const FONT_CACHE = "freshmart-pos-fonts";
 const IMG_CACHE = "freshmart-pos-images"; // product photos from Google Drive / the web, for offline use
@@ -54,6 +54,8 @@ const scopeUrl = new URL(self.registration.scope);
 const INDEX_URL = new URL("index.html", scopeUrl).href;
 
 self.addEventListener("install", (event) => {
+  // Do not leave a newly downloaded app shell waiting for the user to close the POS.
+  self.skipWaiting();
   event.waitUntil(
     (async () => {
       const cache = await caches.open(CACHE);
@@ -76,8 +78,26 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
       const keys = await caches.keys();
-      await Promise.all(keys.filter((k) => k.startsWith("freshmart-pos-") && k !== CACHE && k !== FONT_CACHE && k !== IMG_CACHE).map((k) => caches.delete(k)));
+      const hadPreviousAppCache = keys.some(
+        (k) => k.startsWith("freshmart-pos-") && k !== CACHE && k !== FONT_CACHE && k !== IMG_CACHE,
+      );
+      await Promise.all(
+        keys
+          .filter((k) => k.startsWith("freshmart-pos-") && k !== CACHE && k !== FONT_CACHE && k !== IMG_CACHE)
+          .map((k) => caches.delete(k)),
+      );
       await self.clients.claim();
+
+      // On an actual update, reload already-open POS windows automatically so the
+      // new app shell is used immediately. First installation does not reload.
+      if (hadPreviousAppCache) {
+        const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+        await Promise.all(
+          windows
+            .filter((client) => client.url.startsWith(scopeUrl.href))
+            .map((client) => (typeof client.navigate === "function" ? client.navigate(client.url).catch(() => null) : null)),
+        );
+      }
     })(),
   );
 });

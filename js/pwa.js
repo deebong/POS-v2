@@ -31,11 +31,22 @@ export function browserInfo() {
   return "other";
 }
 
+/**
+ * FreshMart uses an automatic PWA update strategy. Once a new service worker
+ * has finished installing, activate it immediately and reload the page once.
+ * This prevents users from being stuck on an old cached app shell and means
+ * they do not have to press Ctrl+F5 or manually accept an update prompt.
+ */
+function activateUpdate(reg) {
+  if (!reg || !reg.waiting) return;
+  updateRequested = true;
+  reg.waiting.postMessage({ type: "SKIP_WAITING" });
+}
+
 function promptUpdate(reg) {
-  toastAction("A new version of FreshMart POS is ready.", "Update now", () => {
-    updateRequested = true;
-    if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
-  });
+  // Kept as a small compatibility wrapper for callers that may still use the
+  // old function name. Updates are now applied automatically.
+  activateUpdate(reg);
 }
 
 export function initPwa() {
@@ -68,15 +79,25 @@ export function initPwa() {
     Promise.resolve(navigator.serviceWorker.register("sw.js", { scope: "./" }))
       .then((reg) => {
         if (!reg) return;
-        if (reg.waiting && navigator.serviceWorker.controller) promptUpdate(reg);
+        if (reg.waiting && navigator.serviceWorker.controller) activateUpdate(reg);
         reg.addEventListener("updatefound", () => {
           const w = reg.installing;
           if (!w) return;
           w.addEventListener("statechange", () => {
-            if (w.state === "installed" && navigator.serviceWorker.controller) promptUpdate(reg);
+            if (w.state === "installed" && navigator.serviceWorker.controller) {
+              activateUpdate(reg);
+            }
           });
         });
-        setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000);
+
+        // Check when the app comes back to the foreground as well as hourly.
+        // This is especially useful for an installed POS that stays open all day.
+        const checkForUpdate = () => reg.update().catch(() => {});
+        setInterval(checkForUpdate, 60 * 60 * 1000);
+        window.addEventListener("focus", checkForUpdate);
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === "visible") checkForUpdate();
+        });
       })
       .catch((e) => console.warn("Service worker registration failed", e));
     Promise.resolve(navigator.serviceWorker.ready)
@@ -90,7 +111,9 @@ export function initPwa() {
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       if (!updateRequested || reloading) return; // first install also fires this — don't reload then
       reloading = true;
-      location.reload();
+      toast("FreshMart POS updated. Reloading…");
+      // Give the toast a moment to render, then reload onto the newly activated shell.
+      setTimeout(() => location.reload(), 250);
     });
   } catch (e) {
     console.warn("Offline support unavailable", e);
