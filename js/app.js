@@ -9,6 +9,7 @@ import { initPwa, promptInstall, pwa, renderInstallBar } from "./pwa.js";
 import { applyTheme } from "./theme.js";
 import * as sales from "./sales.js";
 import * as customers from "./customers.js";
+import * as procurement from "./procurement.js";
 import * as returns from "./returns-exchanges.js";
 import { openScanner } from "./scanner.js";
 import * as settings from "./settings.js";
@@ -22,28 +23,41 @@ const routes = {
   labels: { title: "Product Labels", sub: () => "Print scannable product labels", mod: labels },
   sales: { title: "Invoices", sub: () => "Sales history & receipts", mod: sales },
   customers: { title: "Customers", sub: () => "Customer directory & purchase history", mod: customers },
+  procurement: { title: "Suppliers & Purchases", sub: () => "Supplier directory & incoming stock", mod: procurement },
   returns: { title: "Returns & Exchanges", sub: () => "Returns, refunds & exchanges", mod: returns },
   settings: { title: "Settings", sub: () => "Data, sync, offline & store profile", mod: settings },
 };
 
 let current = null;
 let refreshPending = false;
+let navigationSeq = 0;
+
 async function navigate() {
+  const seq = ++navigationSeq;
   const name = location.hash.replace(/^#\/?/, "").split("?")[0] || "dashboard";
   const key = routes[name] ? name : "dashboard";
   const route = routes[key];
   if (current && current.mod.unmount) current.mod.unmount();
   const old = document.getElementById("view");
   const view = old.cloneNode(false); view.className = "view"; old.replaceWith(view);
-  $$("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.route === key));
-  $("#pageTitle").textContent = route.title; $("#pageSub").textContent = route.sub(); document.title = `${route.title} · ${state.settings.storeName}`;
-  current = { name: key, mod: route.mod, view };
-  try { await route.mod.mount(view); } catch (e) { console.error(e); view.innerHTML = `<div class="empty"><div class="big">⚠️</div><h4>Something went wrong</h4><p>${esc(e.message || "Unable to load this page")}</p><button class="btn btn-primary" onclick="location.reload()" style="margin-top:12px">Reload</button></div>`; }
+  $$("#nav a").forEach(a => a.classList.toggle("active", a.dataset.route === key));
+  $("#pageTitle").textContent = route.title;
+  $("#pageSub").textContent = route.sub();
+  document.title = `${route.title} · ${state.settings.storeName}`;
+  current = { name: key, mod: route.mod, view, seq };
+  try {
+    await route.mod.mount(view);
+    if (seq !== navigationSeq || current?.view !== view || location.hash.replace(/^#\/?/, "").split("?")[0] !== key) return;
+  } catch (e) {
+    if (seq !== navigationSeq || current?.view !== view) return;
+    console.error(e);
+    view.innerHTML = `<div class="empty"><div class="big">⚠️</div><h4>Something went wrong</h4><p>${esc(e.message || "Unable to load this page")}</p><button class="btn btn-primary" onclick="location.reload()" style="margin-top:12px">Reload</button></div>`;
+  }
 }
 function applyBrand(){applyTheme(state.settings);$("#brandName").textContent=state.settings.storeName;if(current){document.title=`${routes[current.name].title} · ${state.settings.storeName}`;$("#pageSub").textContent=routes[current.name].sub();}renderSync();}
 function tickClock(){const now=new Date();$("#clockTime").textContent=now.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"});$("#clockDate").textContent=now.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"});}
 const hhmm=d=>d?new Date(d).toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"}):"…";
-function renderSync(){const mode=getConfig().mode,m=state.meta,st=currentStatus()||{},pill=$("#syncPill"),txt=$("#syncText"),banner=$("#banner");pill.className="sync-pill";let bannerHtml="",bannerKind="";if(mode==="local"){pill.classList.add("demo");txt.textContent="This PC";pill.title="Data is stored on this PC only (works offline). Click to connect Google Sheets.";}else if(mode==="hybrid"){const pending=st.pending||0;if(st.syncing||m.syncing){pill.classList.add("busy");txt.textContent=pending?`Syncing ${pending}…`:"Syncing…";}else if(!navigator.onLine){pill.classList.add("offline");txt.textContent=pending?`Offline · ${pending} to sync`:"Offline";bannerKind="warn";bannerHtml=`${icon("wifiOff")}<span><b>You're offline.</b> Keep selling — everything is saved on this PC and will sync to Google Sheets automatically when the internet is back.</span>`;}else if(st.lastError){pill.classList.add("err");txt.textContent=pending?`Sync issue · ${pending} waiting`:"Sync issue";bannerKind="err";bannerHtml=`${icon("alert")}<span><b>Couldn't sync with Google Sheets.</b> ${esc(st.lastError)} Your data is safe on this PC.</span><button class="btn btn-sm btn-outline" id="bnRetry">Retry</button><a class="btn btn-sm btn-ghost" href="#/settings">Settings</a>`;}else if(pending){pill.classList.add("busy");txt.textContent=`${pending} to sync`;}else{pill.classList.add("ok");txt.textContent=`Synced ${hhmm(st.lastSyncAt)}`;}pill.title=`Offline-first: saved on this PC, synced with Google Sheets.${st.lastSyncAt?" Last sync "+new Date(st.lastSyncAt).toLocaleString():""} Click to sync now.`;}else{if(m.syncing){pill.classList.add("busy");txt.textContent="Syncing…";}else if(m.error){pill.classList.add("err");txt.textContent="Sync failed";pill.title=m.error;bannerKind="err";bannerHtml=`${icon("alert")}<span><b>Can't reach Google Sheets.</b> ${esc(m.error)}</span><button class="btn btn-sm btn-outline" id="bnRetry">Retry</button><a class="btn btn-sm btn-ghost" href="#/settings">Settings</a>`;}else{pill.classList.add("ok");txt.textContent=`Live · ${hhmm(m.syncedAt)}`;pill.title="Every action goes straight to Google Sheets. Click to sync now.";}}banner.className=`banner ${bannerKind?"banner-"+bannerKind:"hidden"}`;banner.innerHTML=bannerHtml;const retry=$("#bnRetry");if(retry)retry.onclick=async()=>{await refreshData();renderSync();if(getConfig().mode==="sheets"&&!state.meta.error)navigate();};}
+function renderSync(){const mode=getConfig().mode,m=state.meta,st=currentStatus()||{},pill=$("#syncPill"),txt=$("#syncText"),banner=$("#banner");pill.className="sync-pill";let bannerHtml="",bannerKind="";if(mode==="local"){pill.classList.add("demo");txt.textContent="This PC";pill.title="Data is stored on this PC only (works offline). Click to connect Google Sheets.";}else if(mode==="hybrid"){const pending=st.pending||0;if(st.syncing||m.syncing){pill.classList.add("busy");txt.textContent=pending?`Syncing ${pending}…`:"Syncing…";}else if(!navigator.onLine){pill.classList.add("offline");txt.textContent=pending?`Offline · ${pending} to sync`:"Offline";bannerKind="warn";bannerHtml=`${icon("wifiOff")}<span><b>You’re offline.</b> Keep selling — everything is saved on this PC and will sync to Google Sheets automatically when the internet is back.</span>`;}else if(st.lastError){pill.classList.add("err");txt.textContent=pending?`Sync issue · ${pending} waiting`:"Sync issue";bannerKind="err";bannerHtml=`${icon("alert")}<span><b>Couldn’t sync with Google Sheets.</b> ${esc(st.lastError)} Your data is safe on this PC.</span><button class="btn btn-sm btn-outline" id="bnRetry">Retry</button><a class="btn btn-sm btn-ghost" href="#/settings">Settings</a>`;}else if(pending){pill.classList.add("busy");txt.textContent=`${pending} to sync`;}else{pill.classList.add("ok");txt.textContent=`Synced ${hhmm(st.lastSyncAt)}`;}pill.title=`Offline-first: saved on this PC, synced with Google Sheets.${st.lastSyncAt?" Last sync "+new Date(st.lastSyncAt).toLocaleString():""} Click to sync now.`;}else{if(m.syncing){pill.classList.add("busy");txt.textContent="Syncing…";}else if(m.error){pill.classList.add("err");txt.textContent="Sync failed";pill.title=m.error;bannerKind="err";bannerHtml=`${icon("alert")}<span><b>Can’t reach Google Sheets.</b> ${esc(m.error)}</span><button class="btn btn-sm btn-outline" id="bnRetry">Retry</button><a class="btn btn-sm btn-ghost" href="#/settings">Settings</a>`;}else{pill.classList.add("ok");txt.textContent=`Live · ${hhmm(m.syncedAt)}`;pill.title="Every action goes straight to Google Sheets. Click to sync now.";}}banner.className=`banner ${bannerKind?"banner-"+bannerKind:"hidden"}`;banner.innerHTML=bannerHtml;const retry=$("#bnRetry");if(retry)retry.onclick=async()=>{await refreshData();renderSync();if(getConfig().mode==="sheets"&&!state.meta.error)navigate();};}
 async function onPillClick(){const mode=getConfig().mode;if(mode==="local"){location.hash="#/settings";return;}if(mode==="hybrid"&&!navigator.onLine){toast(`Offline — ${(currentStatus()||{}).pending||0} change(s) will sync when you're back online`,"warn");return;}const changed=await refreshData();const st=currentStatus()||{};const err=mode==="hybrid"?st.lastError:state.meta.error;if(err)toast(err,"error");else toast(changed?"Synced — new changes loaded":"Everything is up to date");}
 function applyDataChange(){if(!current)return;if(document.querySelector(".modal-backdrop")){refreshPending=true;return;}refreshPending=false;if(current.mod.refresh)current.mod.refresh();else current.mod.mount(current.view);}
 function startPolling(){const tick=async()=>{const mode=getConfig().mode;if(document.visibilityState!=="visible"||mode==="local"||!navigator.onLine)return;if(document.querySelector(".modal-backdrop"))return;await refreshData();};setInterval(()=>{if(refreshPending&&!document.querySelector(".modal-backdrop"))applyDataChange();else tick();},45000);document.addEventListener("visibilitychange",tick);window.addEventListener("online",()=>{renderSync();if(getConfig().mode==="sheets")refreshData();});window.addEventListener("offline",renderSync);}
