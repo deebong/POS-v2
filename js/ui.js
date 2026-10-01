@@ -73,10 +73,12 @@ export const esc = (v) =>
 /** Indian digit grouping (1,23,456.00) for ₹, international grouping otherwise. */
 const numLocale = () => (state.settings.currency === "₹" ? "en-IN" : "en-US");
 
-export function money(n) {
+export function money(n, settings = state.settings) {
   const v = Number(n) || 0;
-  const s = Math.abs(v).toLocaleString(numLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return `${v < 0 ? "-" : ""}${state.settings.currency || "$"}${s}`;
+  const currency = settings?.currency || "$";
+  const locale = currency === "₹" ? "en-IN" : "en-US";
+  const s = Math.abs(v).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${v < 0 ? "-" : ""}${currency}${s}`;
 }
 export function num(n, max = 3) {
   return Number(n || 0).toLocaleString(numLocale(), { maximumFractionDigits: max });

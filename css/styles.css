@@ -81,6 +81,8 @@ a { color: inherit; text-decoration: none; }
   padding: 18px 14px;
   gap: 8px;
   min-height: 0;
+  min-width: 0;
+  overflow: auto;
 }
 .brand { display: flex; align-items: center; gap: 12px; padding: 4px 8px 18px; }
 .brand-logo {
@@ -104,7 +106,8 @@ a { color: inherit; text-decoration: none; }
 .nav a .kbd { margin-left: auto; }
 
 .sidebar-foot { margin-top: auto; }
-.cashier-card { display: flex; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-2); }
+.cashier-card { display: flex; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-2); flex: none; }
+.sidebar-foot { margin-top: auto; flex: none; }
 .avatar { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; color: #fff; background: linear-gradient(135deg, #6366f1, #8b5cf6); flex: none; }
 .cashier-card .who { font-weight: 700; line-height: 1.2; }
 .cashier-card .role { font-size: 12px; color: var(--muted); }
@@ -343,10 +346,10 @@ table.table { width: 100%; border-collapse: collapse; }
 .donut-center b { font-size: 18px; font-weight: 800; }
 .donut-center span { font-size: 11.5px; color: var(--muted); }
 .legend { display: flex; flex-direction: column; gap: 12px; min-width: 130px; flex: 1; }
-.legend-row { display: flex; align-items: center; gap: 10px; }
+.legend-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) 36px max-content; align-items: center; column-gap: 10px; min-width: 0; }
 .legend-dot { width: 10px; height: 10px; border-radius: 4px; flex: none; }
 .legend-row .nm { font-weight: 650; }
-.legend-row .vl { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+.legend-row .vl { margin-left: 0; text-align: right; white-space: nowrap; font-weight: 700; font-variant-numeric: tabular-nums; }
 .legend-row .pc { font-size: 12px; color: var(--muted); width: 36px; text-align: right; }
 
 .list { display: flex; flex-direction: column; }
@@ -796,3 +799,9 @@ html.nav-collapsed .pos { grid-template-columns: minmax(0, 1fr) 420px; }
 .transfer-col { display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
 .transfer-col .btn { justify-content: flex-start; }
 @media (max-width: 640px) { .transfer-grid { grid-template-columns: 1fr; } }
+
+
+/* Some older Windows monospace fonts do not include the Indian rupee glyph. */
+.receipt .rc-currency {
+  font-family: "Segoe UI Symbol", "Segoe UI", Arial, sans-serif;
+}

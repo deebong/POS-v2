@@ -322,7 +322,7 @@ export async function mount(el) {
           <div><b>${info.persisted ? "Data is kept permanently" : "Protect data on this PC"}</b>
           <span>Using ${fmtBytes(info.usage)}${info.quota ? ` of ${fmtBytes(info.quota)} available` : ""}. ${info.persisted ? "The browser won't clear it to free up space." : "Ask the browser never to clear POS data when disk space runs low."}</span></div>
           ${!info.persisted && info.supported ? `<button class="btn btn-sm btn-outline" data-act="persist">Keep permanently</button>` : ""}</div>
-        ${
+        <div class="status-row"><span class="status-ic">${icon("layers", "sm")}</span>\n          <div><b>Local database: browser-managed IndexedDB</b>\n          <span>In “This PC + Google Sheets” mode, the sheet snapshot, offline changes and sync queue are stored in this browser profile. The website cannot choose the physical database folder. Chrome/Edge users can see the Profile Path in <span class="mono">chrome://version</span> or <span class="mono">edge://version</span>. Use <b>Backups ▸ Choose folder…</b> for a location you control.</span></div></div>\n        ${
           (await windowsKitAvailable())
             ? `<div class="status-row"><span class="status-ic ok">${icon("monitor", "sm")}</span>
           <div><b>Run on another Windows PC (Windows 7 or newer)</b>

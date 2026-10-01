@@ -4,12 +4,13 @@ import { state } from "./store.js";
 import { esc, fmtDateTime, money, num, methodLabel } from "./ui.js";
 
 export function receiptHtml(sale, items, settings = state.settings) {
+  const rmoney = (n) => esc(money(n, settings)).replace("₹", '<span class="rc-currency">₹</span>');
   const lines = items
     .map(
       (it) => `
       <div class="rc-item">
         <div class="nm">${esc(it.name)}</div>
-        <div class="calc"><span>${num(it.qty)} ${esc(it.unit)} × ${money(it.price)}</span><span>${money(it.lineSubtotal)}</span></div>
+        <div class="calc"><span>${num(it.qty)} ${esc(it.unit)} × ${rmoney(it.price)}</span><span>${rmoney(it.lineSubtotal)}</span></div>
       </div>`,
     )
     .join("");
@@ -31,14 +32,14 @@ export function receiptHtml(sale, items, settings = state.settings) {
     <hr />
     ${lines}
     <hr />
-    <div class="rc-row"><span>Subtotal</span><span>${money(sale.subtotal)}</span></div>
-    ${sale.discount > 0 ? `<div class="rc-row"><span>Discount</span><span>-${money(sale.discount)}</span></div>` : ""}
-    <div class="rc-row"><span>${esc(settings.taxLabel || "Tax")}</span><span>${money(sale.tax)}</span></div>
+    <div class="rc-row"><span>Subtotal</span><span>${rmoney(sale.subtotal)}</span></div>
+    ${sale.discount > 0 ? `<div class="rc-row"><span>Discount</span><span>-${rmoney(sale.discount)}</span></div>` : ""}
+    <div class="rc-row"><span>${esc(settings.taxLabel || "Tax")}</span><span>${rmoney(sale.tax)}</span></div>
     <hr />
-    <div class="rc-row rc-total"><span>TOTAL</span><span>${money(sale.total)}</span></div>
+    <div class="rc-row rc-total"><span>TOTAL</span><span>${rmoney(sale.total)}</span></div>
     <hr />
     <div class="rc-row"><span>Paid by</span><span>${esc(methodLabel(sale.paymentMethod))}</span></div>
-    ${paid ? `<div class="rc-row"><span>Received</span><span>${money(sale.amountPaid)}</span></div><div class="rc-row"><span>Change</span><span>${money(sale.changeDue)}</span></div>` : ""}
+    ${paid ? `<div class="rc-row"><span>Received</span><span>${rmoney(sale.amountPaid)}</span></div><div class="rc-row"><span>Change</span><span>${rmoney(sale.changeDue)}</span></div>` : ""}
     <hr />
     <img class="rc-qr" alt="Invoice QR" src="${qrUrl(sale.invoiceNo, { format: "svg" })}" />
     <div class="rc-center rc-small">Scan to look up this invoice</div>
