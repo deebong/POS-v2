@@ -28,7 +28,9 @@
     a.href = "#/closing";
     a.dataset.route = "closing";
     a.title = "End-of-Day Closing";
-    a.innerHTML = '<span data-icon="calculator"></span><span class="txt">Day Close</span>';
+    // Use an icon that is guaranteed to exist in the shared icon registry.
+    // The previous calculator icon was not registered, leaving this nav item visually blank.
+    a.innerHTML = '<span data-icon="receipt"></span><span class="txt">Day Close</span>';
     if (settings) nav.insertBefore(a, settings); else nav.appendChild(a);
   }
 
