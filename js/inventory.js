@@ -41,7 +41,7 @@ export function openProductForm(product, { onSaved } = {}) {
         <datalist id="catList">${cats.map((c) => `<option value="${esc(c)}">`).join("")}</datalist></div>
       <div class="field"><label>Sold by (unit)</label><select class="select" name="unit">${UNITS.map((u) => `<option ${u === p.unit ? "selected" : ""}>${u}</option>`).join("")}</select>
         <span class="hint">kg / l allow decimal quantities at the till</span></div>
-      <div class="field"><label>SKU <span class="muted">(QR code value)</span></label><input class="input" name="sku" maxlength="40" value="${esc(p.sku)}" placeholder="Auto-generated if empty" /></div>
+      <div class="field"><label>SKU <span class="muted">(internal product code)</span></label><input class="input" name="sku" maxlength="40" value="${esc(p.sku)}" placeholder="Auto-generated if empty" /></div>
       <div class="field"><label>Barcode <span class="muted">(optional)</span></label>
         <div class="input-group"><input class="input" name="barcode" maxlength="40" value="${esc(p.barcode || "")}" placeholder="EAN / UPC" />
         <button type="button" class="btn btn-outline" id="genBarcode" style="border-radius:0 12px 12px 0;border-left:0">Generate</button></div></div>
@@ -312,7 +312,7 @@ export function showProductCard(p, { onSaved } = {}) {
     <div style="text-align:center;padding:4px 0 8px"><div class="thumb" style="width:72px;height:72px;font-size:40px;margin:0 auto 10px;background:${catTint(p.category)}">${mediaHtml(p)}</div>
       <div style="font-size:28px;font-weight:800">${money(p.price)}<span class="muted" style="font-size:14px;font-weight:600"> /${esc(p.unit)}</span></div>
       <div style="margin-top:8px"><span class="badge ${st === "out" ? "badge-red" : st === "low" ? "badge-amber" : "badge-green"}">${num(p.stock)} ${esc(p.unit)} in stock</span></div></div>`,
-    footer: `<button class="btn btn-outline" data-qr>${icon("qr")} QR</button><button class="btn btn-outline" data-edit>${icon("edit")} Edit</button><button class="btn btn-primary" data-stock>${icon("plus")} Restock</button>`,
+    footer: `<button class="btn btn-outline" data-qr>${icon("qr")} Product code</button><button class="btn btn-outline" data-edit>${icon("edit")} Edit</button><button class="btn btn-primary" data-stock>${icon("plus")} Restock</button>`,
   });
   modal.$("[data-qr]").onclick = () => { modal.close(); openProductQR(p); };
   modal.$("[data-edit]").onclick = () => { modal.close(); openProductForm(p, { onSaved }); };
@@ -425,11 +425,11 @@ export async function mount(el) {
   el.innerHTML = `
   <div class="view-enter">
     <div class="page-head">
-      <div><h2>Inventory</h2><p>Track stock levels, prices and QR codes for every product.</p></div>
+      <div><h2>Inventory</h2><p>Track stock, prices and product codes for every product.</p></div>
       <div class="actions">
         <button class="btn btn-outline" id="iImport">${icon("plus")} Import CSV</button>
         <button class="btn btn-outline" id="iExport">${icon("download")} Export CSV</button>
-        <a class="btn btn-outline" href="#/labels">${icon("qr")} Print QR labels</a>
+        <a class="btn btn-outline" href="#/labels">${icon("qr")} Print product labels</a>
         <button class="btn btn-primary" id="iAdd">${icon("plus")} Add product</button>
       </div>
     </div>
@@ -500,7 +500,7 @@ export async function mount(el) {
           <td class="stock-cell"><div class="val">${num(p.stock)} <span class="muted" style="font-weight:600">${esc(p.unit)}</span></div><div class="meter ${st}"><i style="width:${pct}%"></i></div></td>
           <td>${badge}</td>
           <td><div class="row-actions">
-            <button class="icon-btn primary" data-a="qr" title="QR code">${icon("qr")}</button>
+            <button class="icon-btn primary" data-a="qr" title="Product code">${icon("qr")}</button>
             <button class="icon-btn primary" data-a="stock" title="Adjust stock">${icon("plusCircle")}</button>
             <button class="icon-btn" data-a="edit" title="Edit">${icon("edit")}</button>
             <button class="icon-btn danger" data-a="del" title="Delete">${icon("trash")}</button>
