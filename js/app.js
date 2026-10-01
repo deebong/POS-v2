@@ -16,6 +16,7 @@ import * as eodClosing from "./eod-closing.js";
 import * as auditLog from "./audit-log.js";
 import * as lowStock from "./low-stock.js";
 import * as reports from "./reports.js";
+import * as loyalty from "./loyalty.js";
 import { openScanner } from "./scanner.js";
 import * as settings from "./settings.js";
 import { findByCode, loadAll, refreshData, reloadLocal, state } from "./store.js";
@@ -35,6 +36,7 @@ const routes = {
   audit: { title: "Audit Log", sub: () => "Operator activity & important POS actions", mod: auditLog },
   lowStock: { title: "Low Stock", sub: () => "Reorder alerts & stock exceptions", mod: lowStock },
   reports: { title: "Reports", sub: () => "Sales, payments & product performance", mod: reports },
+  loyalty: { title: "Loyalty", sub: () => "Customer rewards & points", mod: loyalty },
   settings: { title: "Settings", sub: () => "Data, sync, offline & store profile", mod: settings },
 };
 
