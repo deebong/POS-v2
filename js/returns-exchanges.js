@@ -38,13 +38,26 @@ async function api(action, payload = {}) {
   } finally { clearTimeout(timer); }
 }
 
+// Navigation must never wait for Google Sheets. Load the local snapshot first; cloud refresh is background-only.
 async function bootstrap() {
   const cached = await idb.get(KEY).catch(() => null);
   if (cached) data = { ...data, ...cached };
-  if (getConfig().mode !== "local" && navigator.onLine) {
+}
+
+async function refreshCloud(generation, el, renderStats) {
+  const cfg = getConfig();
+  if (cfg.mode === "local" || !navigator.onLine) return;
+  try {
     const r = await api("returnsBootstrap");
+    if (generation !== mountGeneration || !el.isConnected || document.getElementById("view") !== el) return;
     data = { returns: r.returns || [], returnItems: r.returnItems || [], lastPull: now() };
     await saveLocal();
+    if (generation === mountGeneration && el.isConnected && document.getElementById("view") === el) renderStats();
+  } catch (e) {
+    // Cached data remains usable. A background refresh failure must not block navigation or replace the page.
+    if (generation === mountGeneration && el.isConnected && document.getElementById("view") === el) {
+      console.warn("[FreshMart POS] returns background refresh failed:", e);
+    }
   }
 }
 
@@ -106,7 +119,7 @@ export async function mount(el){
   ensureStyles();
   el.innerHTML=`<div class="view-enter returns-wrap"><div class="returns-actions"><button class="btn btn-primary" id="newReturn">${icon("undo")} New return / exchange</button></div><div class="returns-stats"><div><span>Returns & exchanges</span><b id="returnCount">0</b></div><div><span>Refund value</span><b id="refundValue">${money(0)}</b></div><div><span>Transactions</span><b id="transactionCount">0</b></div></div><div class="card"><div class="returns-find"><div class="search-box"><span data-icon="search"></span><input class="input" id="returnInvoice" placeholder="Enter or scan invoice number…"></div><button class="btn btn-outline" id="findInvoice">Find invoice</button></div><div id="invoiceResult"></div></div><div class="card"><div class="section-title"><div><h3>Recent returns & exchanges</h3><p>Completed return transactions for this POS.</p></div></div><div id="returnsHistory" class="table-wrap"></div></div></div>`;
   hydrateIcons(el);
-  try { await bootstrap(); } catch(e) { if (generation !== mountGeneration || !el.isConnected || document.getElementById("view") !== el) return; toast(e.message,"warn"); }
+  try { await bootstrap(); } catch(e) { if (generation !== mountGeneration || !el.isConnected || document.getElementById("view") !== el) return; console.warn("[FreshMart POS] returns cache read failed:", e); }
   if (generation !== mountGeneration || !el.isConnected || document.getElementById("view") !== el) return;
   const renderStats=()=>{const count=el.querySelector("#returnCount"),tx=el.querySelector("#transactionCount"),refund=el.querySelector("#refundValue");if(!count||!tx||!refund)return;count.textContent=data.returns.filter(r=>r.type==="return").length;tx.textContent=data.returns.length;refund.textContent=money(data.returns.reduce((s,r)=>s+Number(r.refundAmount||0),0));renderHistory(el);};
   const showInvoice=()=>{if(generation!==mountGeneration||!el.isConnected)return;const input=el.querySelector("#returnInvoice");if(!input)return;const no=input.value.trim(),sale=findSaleByInvoice(no);if(!sale)return toast("Invoice not found. Enter an invoice number from Invoices.","error");const items=itemsForSale(sale),result=el.querySelector("#invoiceResult");if(!result)return;result.innerHTML=`<div class="return-invoice"><div><b>${esc(sale.invoiceNo)}</b><span>${esc(sale.customerName||"Walk-in")} · ${new Date(sale.createdAt).toLocaleString()}</span></div><div><strong>${money(sale.total)}</strong><button class="btn btn-primary" id="startTransaction">${icon("undo")} Return / exchange</button></div></div><div class="return-invoice-items">${items.map(i=>`<div><span>${esc(i.name)} <small>× ${i.qty}</small></span><b>${money(Number(i.price)*Number(i.qty))}</b></div>`).join("")}</div>`;hydrateIcons(result);const start=result.querySelector("#startTransaction");if(start)start.onclick=()=>transactionModal(sale,el);};
@@ -115,6 +128,8 @@ export async function mount(el){
   if(invoiceInput)invoiceInput.addEventListener("keydown",e=>{if(e.key==="Enter")showInvoice();});
   if(newBtn)newBtn.onclick=()=>{const input=el.querySelector("#returnInvoice");const v=input?input.value.trim():"";if(v)showInvoice();else{if(input)input.focus();toast("Enter the original invoice number first","warn");}};
   renderStats();
+  // Refresh Google Sheets in the background after the cached page is already interactive.
+  refreshCloud(generation, el, renderStats);
 }
 
 export function unmount(){ mountGeneration++; }
