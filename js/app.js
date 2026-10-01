@@ -13,6 +13,7 @@ import * as procurement from "./procurement.js";
 import * as returns from "./returns-exchanges.js";
 import * as cashDrawer from "./cash-drawer.js";
 import * as eodClosing from "./eod-closing.js";
+import * as auditLog from "./audit-log.js";
 import { openScanner } from "./scanner.js";
 import * as settings from "./settings.js";
 import { findByCode, loadAll, refreshData, reloadLocal, state } from "./store.js";
@@ -29,6 +30,7 @@ const routes = {
   returns: { title: "Returns & Exchanges", sub: () => "Returns, refunds & exchanges", mod: returns },
   cashDrawer: { title: "Cash Drawer", sub: () => "Open, manage & close the counter cash drawer", mod: cashDrawer },
   closing: { title: "End-of-Day Closing", sub: () => "Reconcile sales, payments & drawer", mod: eodClosing },
+  audit: { title: "Audit Log", sub: () => "Operator activity & important POS actions", mod: auditLog },
   settings: { title: "Settings", sub: () => "Data, sync, offline & store profile", mod: settings },
 };
 
@@ -52,6 +54,7 @@ async function navigate() {
   try {
     await route.mod.mount(view);
     if (seq !== navigationSeq || current?.view !== view || location.hash.replace(/^#\/?/, "").split("?")[0] !== key) return;
+    auditLog.recordAudit({ action: "Viewed page", module: route.title, detail: `Opened ${route.title}` });
   } catch (e) {
     if (seq !== navigationSeq || current?.view !== view) return;
     console.error(e);

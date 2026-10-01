@@ -1,5 +1,5 @@
 // Legacy compatibility bridge for store navigation that predates the main hash router.
-// Returns, Cash Drawer and End-of-Day Closing are injected here so the shell remains compatible with older cached index.html files.
+// Store modules are injected here so the shell remains compatible with older cached index.html files.
 (function ensureStoreNav() {
   const nav = document.getElementById("nav");
   if (!nav) return;
@@ -28,9 +28,16 @@
     a.href = "#/closing";
     a.dataset.route = "closing";
     a.title = "End-of-Day Closing";
-    // Use an icon that is guaranteed to exist in the shared icon registry.
-    // The previous calculator icon was not registered, leaving this nav item visually blank.
     a.innerHTML = '<span data-icon="receipt"></span><span class="txt">Day Close</span>';
+    if (settings) nav.insertBefore(a, settings); else nav.appendChild(a);
+  }
+
+  if (!nav.querySelector('[data-route="audit"]')) {
+    const a = document.createElement("a");
+    a.href = "#/audit";
+    a.dataset.route = "audit";
+    a.title = "Audit Log";
+    a.innerHTML = '<span data-icon="list"></span><span class="txt">Audit Log</span>';
     if (settings) nav.insertBefore(a, settings); else nav.appendChild(a);
   }
 
@@ -47,5 +54,26 @@
     link.href = "css/eod-closing.css";
     link.dataset.eodClosingCss = "1";
     document.head.appendChild(link);
+  }
+  if (!document.querySelector('link[data-audit-log-css="1"]')) {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "css/audit-log.css";
+    link.dataset.auditLogCss = "1";
+    document.head.appendChild(link);
+  }
+
+  // openModal binds the header X to [data-close], but older modal footers can contain
+  // additional [data-close] buttons. Delegate those buttons globally so Cancel always works.
+  if (!window.__freshmartModalCloseFix) {
+    window.__freshmartModalCloseFix = true;
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest?.("[data-close]");
+      if (!button) return;
+      const modal = button.closest(".modal-backdrop");
+      if (!modal) return;
+      // The modal's native handler may already have closed it. Escape safely no-ops in that case.
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: false }));
+    });
   }
 })();
