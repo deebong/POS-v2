@@ -1,0 +1,15 @@
+/* Cash Drawer — page-specific layout only. Shared POS components stay in styles.css. */
+.cash-stat-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
+.cash-status{font-size:26px!important}.cash-status.open{color:var(--green)}.cash-status.closed{color:var(--muted)}
+.cash-grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:16px}
+.cash-breakdown{display:grid;gap:0}.cash-breakdown>div{display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-bottom:1px solid var(--line);gap:16px}.cash-breakdown>div:last-child{border-bottom:0}.cash-breakdown span{color:var(--muted)}.cash-breakdown b{font-size:16px}.cash-breakdown .total{padding-top:18px;margin-top:4px;border-top:1px solid var(--line);border-bottom:0}.cash-breakdown .total span{font-weight:700;color:var(--text)}.cash-breakdown .total b{font-size:22px}
+.positive{color:var(--green)!important}.negative{color:var(--red)!important}
+.cash-note{margin-top:14px;padding:12px 14px;border-radius:10px;background:var(--surface-2);color:var(--muted);font-size:12px;line-height:1.5}
+.cash-movements .empty{padding:32px 12px}.cash-movements .empty span{display:block;max-width:340px;margin:8px auto 0}
+.movement-icon{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;flex:0 0 32px}.movement-icon.in{background:var(--green-50);color:var(--green)}.movement-icon.out{background:var(--red-50);color:var(--red)}
+.cash-closed{text-align:center;padding:48px 24px}.cash-closed-icon{width:56px;height:56px;border-radius:16px;background:var(--blue-50);color:var(--primary);display:grid;place-items:center;margin:0 auto 14px}.cash-closed h3{margin:0 0 6px}.cash-closed p{max-width:620px;margin:0 auto 18px;color:var(--muted);line-height:1.55}
+.cash-history{overflow:auto}.cash-history table{min-width:900px}.cash-history .muted{font-size:11px;margin-top:3px}.variance{font-weight:800}.variance.zero{color:var(--green)}.variance.plus{color:var(--amber)}.variance.minus{color:var(--red)}
+.money-input{display:grid;grid-template-columns:auto 1fr;align-items:center;border:1px solid var(--line-strong);border-radius:10px;background:var(--surface);overflow:hidden}.money-input>span{padding-left:13px;font-weight:700;color:var(--muted)}.money-input .input{border:0;border-radius:0;padding-left:7px}.money-input:focus-within{border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-50)}
+.close-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.close-summary>div{padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.close-summary span{display:block;color:var(--muted);font-size:12px;margin-bottom:5px}.close-summary b{font-size:17px}
+@media(max-width:1050px){.cash-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.cash-grid{grid-template-columns:1fr}}
+@media(max-width:640px){.cash-stat-grid{grid-template-columns:1fr}.close-summary{grid-template-columns:1fr}.cash-closed{padding:36px 18px}.cash-drawer-page .page-head{align-items:flex-start}}
