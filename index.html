@@ -18,6 +18,13 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="css/styles.css" />
     <link rel="stylesheet" href="css/custom-select.css" />
+    <style>
+      /* Supplier/Purchase page uses the same full-width content grid as the other store pages. */
+      #view > .proc-wrap { width: 100%; max-width: none; margin-left: 0; margin-right: 0; }
+      @media (max-width: 640px) {
+        #view > .proc-wrap { width: 100%; }
+      }
+    </style>
     <script>
       (function () {
         try {
