@@ -3,9 +3,10 @@
 // cash drawer attached to this counter. Sales remain the source of truth for cash-sale inflows.
 import { idb } from "./data/idb.js";
 import { state } from "./store.js";
-import { $, $$, esc, hydrateIcons, icon, money, openModal, toast } from "./ui.js";
+import { $, esc, hydrateIcons, icon, money, openModal, toast } from "./ui.js";
 
-const KEY = "cash.drawer.v1";
+const KEY = "cash.drawer.v2";
+const LEGACY_KEY = "cash.drawer.v1";
 const CASHIER = "Anand";
 const COUNTER = "Counter 1";
 let db = { active: null, sessions: [], movements: [] };
@@ -19,12 +20,18 @@ const round = (v) => Math.round(n(v) * 100) / 100;
 const money0 = (v) => money(round(v));
 
 async function load() {
-  if (!ready) ready = idb.get(KEY).then((v) => {
-    db = { active: null, sessions: [], movements: [], ...(v || {}) };
+  if (!ready) ready = (async () => {
+    let value = await idb.get(KEY);
+    // One-time migration from the first Cash Drawer build; no user data is discarded.
+    if (!value) {
+      value = await idb.get(LEGACY_KEY);
+      if (value) await idb.set(KEY, value);
+    }
+    db = { active: null, sessions: [], movements: [], ...(value || {}) };
     if (!Array.isArray(db.sessions)) db.sessions = [];
     if (!Array.isArray(db.movements)) db.movements = [];
     return db;
-  });
+  })();
   return ready;
 }
 async function save() {
@@ -34,9 +41,10 @@ async function save() {
 function sessionSales(session) {
   if (!session) return [];
   const from = new Date(session.openedAt).getTime();
+  const to = session.closedAt ? new Date(session.closedAt).getTime() : Infinity;
   return state.sales.filter((s) => {
     const t = new Date(s.createdAt).getTime();
-    return t >= from && (!session.closedAt || t <= new Date(session.closedAt).getTime()) && s.status === "completed" && s.paymentMethod === "cash";
+    return Number.isFinite(t) && t >= from && t <= to && s.status === "completed" && s.paymentMethod === "cash";
   });
 }
 function cashSales(session) { return sessionSales(session).reduce((sum, s) => sum + n(s.total), 0); }
@@ -53,7 +61,7 @@ function sessionDuration(session) {
 function fmtDate(iso) { return iso ? new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—"; }
 
 function render() {
-  if (!elRef) return;
+  if (!elRef || !elRef.isConnected) return;
   const active = db.active;
   const sales = active ? sessionSales(active) : [];
   const salesTotal = active ? cashSales(active) : 0;
@@ -65,8 +73,8 @@ function render() {
 
   elRef.innerHTML = `
     <div class="view-enter cash-drawer-page">
-      <div class="page-head">
-        <div><h2>Cash Drawer</h2><p>Open, manage and close the counter cash drawer.</p></div>
+      <div class="cash-toolbar">
+        <div class="cash-toolbar-copy">Till cash, movements & shift closing.</div>
         <div class="actions">
           ${active ? `<button class="btn btn-outline" id="cashMove">${icon("cash")} Cash in / out</button><button class="btn btn-primary" id="closeDrawer">${icon("check")} Close drawer</button>` : `<button class="btn btn-primary" id="openDrawer">${icon("cash")} Open drawer</button>`}
         </div>
@@ -166,8 +174,8 @@ function openCloseModal() {
   const counted = m.$("#countedCash"), saveBtn = m.$("#drawerCloseSave");
   const update = () => {
     const v = round(counted.value);
-    const d = Number.isFinite(v) ? round(v - exp) : 0;
-    saveBtn.textContent = d === 0 ? "Close drawer" : `Close drawer · ${d > 0 ? "+" : "−"}${money0(Math.abs(d))}`;
+    const d = round(v - exp);
+    saveBtn.textContent = Number.isFinite(v) ? (d === 0 ? "Close drawer" : `Close drawer · ${d > 0 ? "+" : "−"}${money0(Math.abs(d))}`) : "Close drawer";
   };
   counted.addEventListener("input", update);
   saveBtn.onclick = async () => {
