@@ -46,7 +46,7 @@ export function themeVars(color) {
     "--primary-50": toHex(mix(rgb, white, 0.92)),
     "--primary-100": toHex(mix(rgb, white, 0.8)),
     "--primary-rgb": rgb.join(", "),
-    "--on-primary": luminance(rgb) > 0.5 ? "#0f1b2d" : "#ffffff", // readable text on very light brand colours
+    "--on-primary": luminance(rgb) > 0.5 ? "#0f1b2d" : "#ffffff",
   };
 }
 
@@ -56,8 +56,17 @@ export function applyTheme(settings = {}) {
   for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
   const sidebar = ["light", "brand", "dark"].includes(settings.sidebarTheme) ? settings.sidebarTheme : "light";
   root.setAttribute("data-sidebar", sidebar);
+
+  // Keep browser/PWA chrome synchronized with the selected store colour.
+  // Chromium/Edge can update the page theme colour immediately; installed
+  // Windows PWA title bars may continue using the manifest value until the
+  // app is restarted, because that metadata is owned by the browser shell.
+  const color = vars["--primary"];
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute("content", vars["--primary"]);
+  if (meta) meta.setAttribute("content", color);
+  const msTile = document.querySelector('meta[name="msapplication-TileColor"]');
+  if (msTile) msTile.setAttribute("content", color);
+
   try {
     // Read by the tiny script in index.html so the right colours show before the app loads.
     localStorage.setItem("pos.theme", JSON.stringify({ vars, sidebar }));

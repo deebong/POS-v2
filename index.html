@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>FreshMart POS — Grocery Point of Sale</title>
     <meta name="description" content="Grocery POS with billing, inventory and QR codes. Works offline on your PC and syncs with Google Sheets." />
-    <meta name="theme-color" content="#0f9d58" />
+    <meta name="theme-color" content="#2563eb" />
+    <meta name="msapplication-TileColor" content="#2563eb" />
     <meta name="application-name" content="FreshMart POS" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="FreshMart POS" />
@@ -25,6 +26,13 @@
           if (t && t.vars) {
             for (var k in t.vars) r.style.setProperty(k, t.vars[k]);
             r.setAttribute("data-sidebar", t.sidebar || "light");
+            var c = t.vars["--primary"];
+            if (c) {
+              var m = document.querySelector('meta[name="theme-color"]');
+              if (m) m.setAttribute("content", c);
+              var mt = document.querySelector('meta[name="msapplication-TileColor"]');
+              if (mt) mt.setAttribute("content", c);
+            }
           }
           if (localStorage.getItem("pos.navCollapsed") === "1") r.className += " nav-collapsed";
         } catch (e) {}
