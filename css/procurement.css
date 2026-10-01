@@ -1,0 +1,28 @@
+/* Supplier & Purchase page — uses the same full-width content canvas as the other Store pages. */
+.proc-wrap {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+.proc-head {
+  width: 100%;
+}
+.proc-stats {
+  width: 100%;
+}
+.proc-card {
+  width: 100%;
+}
+.proc-table {
+  width: 100%;
+  overflow-x: auto;
+}
+.proc-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+@media (max-width: 900px) {
+  .proc-head { align-items: flex-start; }
+  .proc-head .btn-row { width: 100%; }
+}

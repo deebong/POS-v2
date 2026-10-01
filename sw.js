@@ -1,61 +1,20 @@
 /* FreshMart POS service worker — makes the app installable and lets it start with no internet.
  * App files are pre-cached ("app shell"); your data lives in IndexedDB, not here.
  * Bump VERSION whenever any file below changes. Updates are activated automatically. */
-const VERSION = "ci-8ee442855e91";
+const VERSION = "ci-aea681b4db1a";
 const CACHE = `freshmart-pos-${VERSION}`;
 const FONT_CACHE = "freshmart-pos-fonts";
-const IMG_CACHE = "freshmart-pos-images"; // product photos from Google Drive / the web, for offline use
-
+const IMG_CACHE = "freshmart-pos-images";
 const ASSETS = [
-  "index.html",
-  "manifest.webmanifest",
-  "css/styles.css",
-  "css/custom-select.css",
-  "vendor/jsQR.js",
-  "vendor/qrcode.js",
-  "apps-script/Code.gs",
-  "apps-script/Procurement.gs",
-  "icons/icon-192.png",
-  "icons/icon-512.png",
-  "icons/maskable-512.png",
-  "icons/apple-touch-icon.png",
-  "icons/favicon-32.png",
-  "js/app.js",
-  "js/analytics.js",
-  "js/barcode.js",
-  "js/custom-select.js",
-  "js/procurement-router.js",
-  "js/procurement.js",
-  "js/customers.js",
-  "js/dashboard.js",
-  "js/inventory.js",
-  "js/labels.js",
-  "js/media.js",
-  "js/pos.js",
-  "js/pwa.js",
-  "js/qr.js",
-  "js/receipt.js",
-  "js/sales.js",
-  "js/scanner.js",
-  "js/settings.js",
-  "js/store.js",
-  "js/theme.js",
-  "js/transfer.js",
-  "js/ui.js",
-  "js/data/backend.js",
-  "js/data/engine.js",
-  "js/data/folder-backup.js",
-  "js/data/hybrid-adapter.js",
-  "js/data/idb.js",
-  "js/data/local-adapter.js",
-  "js/data/logic.js",
-  "js/data/sample.js",
-  "js/data/sheets-adapter.js",
+  "index.html", "manifest.webmanifest", "css/styles.css", "css/custom-select.css", "css/procurement.css",
+  "vendor/jsQR.js", "vendor/qrcode.js", "apps-script/Code.gs", "apps-script/Procurement.gs",
+  "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png", "icons/apple-touch-icon.png", "icons/favicon-32.png",
+  "js/app.js", "js/analytics.js", "js/barcode.js", "js/custom-select.js", "js/procurement-router.js", "js/procurement.js", "js/customers.js",
+  "js/dashboard.js", "js/inventory.js", "js/labels.js", "js/media.js", "js/pos.js", "js/pwa.js", "js/qr.js", "js/receipt.js", "js/sales.js", "js/scanner.js", "js/settings.js", "js/store.js", "js/theme.js", "js/transfer.js", "js/ui.js",
+  "js/data/backend.js", "js/data/engine.js", "js/data/folder-backup.js", "js/data/hybrid-adapter.js", "js/data/idb.js", "js/data/logic.js", "js/data/local-adapter.js", "js/data/sample.js", "js/data/sheets-adapter.js",
 ];
-
 const scopeUrl = new URL(self.registration.scope);
 const INDEX_URL = new URL("index.html", scopeUrl).href;
-
 self.addEventListener("install", (event) => {
   self.skipWaiting();
   event.waitUntil((async () => {
@@ -69,7 +28,6 @@ self.addEventListener("install", (event) => {
     if (!(await cache.match(INDEX_URL))) throw new Error("index.html could not be cached");
   })());
 });
-
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
@@ -82,12 +40,10 @@ self.addEventListener("activate", (event) => {
     }
   })());
 });
-
 self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
   if (event.data && event.data.type === "VERSION" && event.ports[0]) event.ports[0].postMessage(VERSION);
 });
-
 self.addEventListener("fetch", (event) => {
   const req = event.request; if (req.method !== "GET") return; const url = new URL(req.url);
   if (url.origin === self.location.origin && url.pathname.startsWith(scopeUrl.pathname)) {
