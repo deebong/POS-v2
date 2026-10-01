@@ -12,6 +12,7 @@ import * as customers from "./customers.js";
 import * as procurement from "./procurement.js";
 import * as returns from "./returns-exchanges.js";
 import * as cashDrawer from "./cash-drawer.js";
+import * as eodClosing from "./eod-closing.js";
 import { openScanner } from "./scanner.js";
 import * as settings from "./settings.js";
 import { findByCode, loadAll, refreshData, reloadLocal, state } from "./store.js";
@@ -27,6 +28,7 @@ const routes = {
   procurement: { title: "Suppliers & Purchases", sub: () => "Supplier directory & incoming stock", mod: procurement },
   returns: { title: "Returns & Exchanges", sub: () => "Returns, refunds & exchanges", mod: returns },
   cashDrawer: { title: "Cash Drawer", sub: () => "Open, manage & close the counter cash drawer", mod: cashDrawer },
+  closing: { title: "End-of-Day Closing", sub: () => "Reconcile sales, payments & drawer", mod: eodClosing },
   settings: { title: "Settings", sub: () => "Data, sync, offline & store profile", mod: settings },
 };
 

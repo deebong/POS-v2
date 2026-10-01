@@ -3,6 +3,9 @@ import { qrUrl } from "./qr.js";
 import { state } from "./store.js";
 import { esc, fmtDateTime, money, num, methodLabel } from "./ui.js";
 
+const CASHIER_NAME = "Anand I";
+const COUNTER_NAME = "C1";
+
 export function receiptHtml(sale, items, settings = state.settings) {
   const rmoney = (n) => {
     const raw = money(n, settings);
@@ -33,7 +36,7 @@ export function receiptHtml(sale, items, settings = state.settings) {
     <hr />
     <div class="rc-row"><span>Invoice</span><b>${esc(sale.invoiceNo)}</b></div>
     <div class="rc-row"><span>Date</span><span>${esc(fmtDateTime(sale.createdAt))}</span></div>
-    <div class="rc-row"><span>Cashier</span><span>Alex K. · C1</span></div>
+    <div class="rc-row"><span>Cashier</span><span>${esc(CASHIER_NAME)} · ${esc(COUNTER_NAME)}</span></div>
     ${sale.customerName ? `<div class="rc-row"><span>Customer</span><span>${esc(sale.customerName)}</span></div>` : ""}
     ${sale.customerPhone ? `<div class="rc-row"><span>Phone</span><span>${esc(sale.customerPhone)}</span></div>` : ""}
     <hr />

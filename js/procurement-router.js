@@ -1,5 +1,5 @@
 // Legacy compatibility bridge for store navigation that predates the main hash router.
-// Returns and Cash Drawer are injected here so the shell remains compatible with older cached index.html files.
+// Returns, Cash Drawer and End-of-Day Closing are injected here so the shell remains compatible with older cached index.html files.
 (function ensureStoreNav() {
   const nav = document.getElementById("nav");
   if (!nav) return;
@@ -23,11 +23,27 @@
     if (settings) nav.insertBefore(a, settings); else nav.appendChild(a);
   }
 
+  if (!nav.querySelector('[data-route="closing"]')) {
+    const a = document.createElement("a");
+    a.href = "#/closing";
+    a.dataset.route = "closing";
+    a.title = "End-of-Day Closing";
+    a.innerHTML = '<span data-icon="calculator"></span><span class="txt">Day Close</span>';
+    if (settings) nav.insertBefore(a, settings); else nav.appendChild(a);
+  }
+
   if (!document.querySelector('link[data-cash-drawer-css="1"]')) {
     const link = document.createElement("link");
     link.rel = "stylesheet";
     link.href = "css/cash-drawer.css";
     link.dataset.cashDrawerCss = "1";
+    document.head.appendChild(link);
+  }
+  if (!document.querySelector('link[data-eod-closing-css="1"]')) {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "css/eod-closing.css";
+    link.dataset.eodClosingCss = "1";
     document.head.appendChild(link);
   }
 })();
