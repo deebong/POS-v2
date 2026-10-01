@@ -1,4 +1,5 @@
-// QR label generator / printer
+// Product QR / barcode label generator and printer.
+import { barcodeUrl } from "./barcode.js";
 import { qrUrl } from "./qr.js";
 import { catTint, categoryCounts, state } from "./store.js";
 import { $, $$, debounce, esc, hydrateIcons, icon, money, num, printHtml, toast } from "./ui.js";
@@ -11,12 +12,13 @@ export const LABEL_SIZES = {
 
 /** items: [{ product, copies }] */
 export function labelSheetHtml(items, { size = "md", showPrice = true } = {}) {
+  const type = state.settings.productLabelCode === "barcode" ? "barcode" : "qr";
   const cells = [];
   for (const { product: p, copies } of items) {
     for (let i = 0; i < copies; i++) {
       cells.push(`
-      <div class="plabel sz-${size}">
-        <img alt="QR ${esc(p.sku)}" src="${qrUrl(p.sku, { format: "svg" })}" />
+      <div class="plabel sz-${size} type-${type}">
+        <img class="${type === "barcode" ? "barcode-img" : "qr-img"}" alt="${type === "barcode" ? "Barcode" : "QR"} ${esc(type === "barcode" ? (p.barcode || p.sku) : p.sku)}" src="${type === "barcode" ? barcodeUrl(p.barcode || p.sku) : qrUrl(p.sku, { format: "svg" })}" />
         <div class="txt">
           <div class="n">${esc(p.name)}</div>
           <div class="s">${esc(p.sku)}</div>
@@ -45,7 +47,7 @@ export async function mount(el) {
   el.innerHTML = `
   <div class="view-enter">
     <div class="page-head">
-      <div><h2>QR Labels</h2><p>Print shelf & package labels. Each QR encodes the product SKU — scan it at the POS to add the item instantly.</p></div>
+      <div><h2>Product Labels</h2><p id="labelSub"></p></div>
       <div class="actions"><button class="btn btn-primary" id="lPrint">${icon("printer")} <span id="lPrintText">Print labels</span></button></div>
     </div>
     <div class="card">
@@ -75,9 +77,15 @@ export async function mount(el) {
   const visible = () => {
     const q = F.search.toLowerCase();
     return state.products.filter(
-      (p) => (F.category === "all" || p.category === F.category) && (!q || p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)),
+      (p) => (F.category === "all" || p.category === F.category) && (!q || p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q) || (p.barcode || "").toLowerCase().includes(q)),
     );
   };
+
+  const labelType = () => state.settings.productLabelCode === "barcode" ? "barcode" : "qr";
+  const labelDescription = () =>
+    labelType() === "barcode"
+      ? "Print shelf & package labels using product barcodes. Products without a barcode use their SKU as a Code 128 fallback."
+      : "Print shelf & package labels. Each QR encodes the product SKU — scan it at the POS to add the item instantly.";
 
   function updatePrintBtn() {
     const n = selected.size * F.copies;
@@ -86,13 +94,15 @@ export async function mount(el) {
 
   function render() {
     const list = visible();
+    const sub = document.querySelector("#labelSub", el);
+    if (sub) sub.textContent = labelDescription();
     $("#lGrid", el).innerHTML = list.length
       ? list
           .map(
             (p) => `
       <div class="label-card ${selected.has(p.id) ? "selected" : ""}" data-id="${p.id}">
         <span class="chk">${icon("check")}</span>
-        <img loading="lazy" alt="QR for ${esc(p.sku)}" src="${qrUrl(p.sku, { format: "svg" })}" />
+        <img class="${state.settings.productLabelCode === "barcode" ? "barcode-img" : "qr-img"}" loading="lazy" alt="${state.settings.productLabelCode === "barcode" ? "Barcode" : "QR"} for ${esc(state.settings.productLabelCode === "barcode" ? (p.barcode || p.sku) : p.sku)}" src="${state.settings.productLabelCode === "barcode" ? barcodeUrl(p.barcode || p.sku) : qrUrl(p.sku, { format: "svg" })}" />
         <div class="nm">${esc(p.emoji)} ${esc(p.name)}</div>
         <div class="sk">${esc(p.sku)}</div>
         <div class="pr">${money(p.price)}<span class="muted" style="font-size:12px;font-weight:600"> /${esc(p.unit)}</span></div>

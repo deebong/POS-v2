@@ -13,6 +13,7 @@ export const DEFAULT_SETTINGS = {
   themeColor: "#0f9d58", // brand colour: buttons, icons, highlights
   sidebarTheme: "light", // light | brand | dark
   productImageMode: "emoji", // emoji | photo
+  productLabelCode: "qr", // qr | barcode
 };
 export const SETTING_KEYS = Object.keys(DEFAULT_SETTINGS);
 

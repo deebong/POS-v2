@@ -135,6 +135,13 @@ export async function mount(el) {
             <div class="field"><label>Currency symbol</label><input class="input" name="currency" maxlength="4" value="${esc(state.settings.currency)}" /></div>
             <div class="field"><label>Tax label</label><input class="input" name="taxLabel" maxlength="12" value="${esc(state.settings.taxLabel)}" placeholder="Tax, GST, VAT…" /></div>
             <div class="field span-2"><label>QR payment ID <span class="muted">(optional, e.g. UPI VPA)</span></label><input class="input" name="upiId" value="${esc(state.settings.upiId || "")}" placeholder="store@bank" /><span class="hint">Used to generate the “UPI / QR” payment code at checkout.</span></div>
+            <div class="field span-2"><label>Product label code</label>
+              <select class="select" name="productLabelCode">
+                <option value="qr" ${state.settings.productLabelCode === "barcode" ? "" : "selected"}>QR code — use the product SKU</option>
+                <option value="barcode" ${state.settings.productLabelCode === "barcode" ? "selected" : ""}>Barcode — use the product barcode</option>
+              </select>
+              <span class="hint">Controls product labels and the product-code print button. Invoice and UPI payment QR codes are unchanged.</span>
+            </div>
             <div class="field span-2"><label>Receipt footer message</label><textarea class="textarea" name="receiptFooter" rows="2">${esc(state.settings.receiptFooter)}</textarea></div>
           </div>
           <div class="sec-head" style="margin:22px 0 14px"><span class="stat-icon violet">${icon("palette", "lg")}</span><div><h3>Appearance</h3><div class="muted">Your store's colours and how products are pictured</div></div></div>

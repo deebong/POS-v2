@@ -2,6 +2,7 @@
 import { LABEL_SIZES, printLabels } from "./labels.js";
 import { getConfig } from "./data/backend.js";
 import { fileToDataUrl, mediaHtml, photoMode, toImageUrl } from "./media.js";
+import { barcodeSvg, barcodeUrl } from "./barcode.js";
 import { qrPngBlob, qrSvg, qrUrl } from "./qr.js";
 import { PRODUCT_CSV_HEAD, productCsvRow, toCsv } from "./transfer.js";
 import {
@@ -248,16 +249,19 @@ export function openStockModal(p, { onSaved } = {}) {
 
 /* ------------------------------ QR modal ------------------------------ */
 export function openProductQR(p) {
+  const type = state.settings.productLabelCode === "barcode" ? "barcode" : "qr";
+  const code = type === "barcode" ? (p.barcode || p.sku) : p.sku;
+  const typeName = type === "barcode" ? "Barcode" : "QR code";
   const modal = openModal({
-    title: "Product QR code",
+    title: `Product ${typeName}`,
     sub: "Scan at the POS to add this item to the bill",
     size: "md",
     body: `
     <div class="qr-modal">
-      <div class="qr-frame"><img alt="QR code for ${esc(p.sku)}" src="${qrUrl(p.sku)}" /></div>
+      <div class="qr-frame"><img class="${type === "barcode" ? "barcode-img" : "qr-img"}" alt="${typeName} for ${esc(code)}" src="${type === "barcode" ? barcodeUrl(code) : qrUrl(code)}" /></div>
       <div>
         <div class="cell-product"><span class="thumb" style="background:${catTint(p.category)}">${mediaHtml(p)}</span><div><div class="name" style="font-size:16px">${esc(p.name)}</div><div class="meta">${esc(p.category)}</div></div></div>
-        <dl class="kv"><dt>SKU (QR value)</dt><dd class="mono">${esc(p.sku)}</dd><dt>Barcode</dt><dd class="mono">${esc(p.barcode || "—")}</dd><dt>Price</dt><dd>${money(p.price)} / ${esc(p.unit)}</dd></dl>
+        <dl class="kv"><dt>SKU</dt><dd class="mono">${esc(p.sku)}</dd><dt>Barcode</dt><dd class="mono">${esc(p.barcode || "—")}</dd><dt>Label code</dt><dd class="mono">${esc(code)}</dd><dt>Price</dt><dd>${money(p.price)} / ${esc(p.unit)}</dd></dl>
         <div style="display:flex;gap:10px">
           <div class="field" style="flex:1"><label>Label size</label><select class="select input-sm" id="qSize" style="height:38px">${Object.entries(LABEL_SIZES).map(([k, v]) => `<option value="${k}" ${k === "md" ? "selected" : ""}>${v}</option>`).join("")}</select></div>
           <div class="field" style="width:78px"><label>Copies</label><input class="input" id="qCopies" type="number" min="1" max="50" value="1" style="height:38px" /></div>
@@ -269,10 +273,24 @@ export function openProductQR(p) {
       <button class="btn btn-outline" data-dl="png">${icon("download")} PNG</button>
       <button class="btn btn-primary" id="qPrint">${icon("printer")} Print label</button>`,
   });
-  modal.$('[data-dl="svg"]').onclick = () => downloadFile(`${p.sku}.svg`, qrSvg(p.sku, { size: 512 }), "image/svg+xml");
+  modal.$('[data-dl="svg"]').onclick = () => downloadFile(`${p.sku}-${type}.svg`, type === "barcode" ? barcodeSvg(code) : qrSvg(code, { size: 512 }), "image/svg+xml");
   modal.$('[data-dl="png"]').onclick = async () => {
     try {
-      downloadFile(`${p.sku}.png`, await qrPngBlob(p.sku, 800), "image/png");
+      if (type === "barcode") {
+        const src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(barcodeSvg(code));
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = 1200; canvas.height = 420;
+          const ctx = canvas.getContext("2d");
+          ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 20, 20, canvas.width - 40, canvas.height - 40);
+          canvas.toBlob((blob) => blob && downloadFile(`${p.sku}-barcode.png`, blob, "image/png"), "image/png");
+        };
+        img.src = src;
+        return;
+      }
+      downloadFile(`${p.sku}.png`, await qrPngBlob(code, 800), "image/png");
     } catch (e) {
       toast(e.message, "error");
     }

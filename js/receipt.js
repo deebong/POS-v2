@@ -4,7 +4,14 @@ import { state } from "./store.js";
 import { esc, fmtDateTime, money, num, methodLabel } from "./ui.js";
 
 export function receiptHtml(sale, items, settings = state.settings) {
-  const rmoney = (n) => esc(money(n, settings)).replace("₹", '<span class="rc-currency">₹</span>');
+  const rmoney = (n) => {
+    const raw = money(n, settings);
+    if ((settings && settings.currency) !== "\u20B9") return esc(raw);
+    const text = String(raw);
+    const neg = text.indexOf("-\u20B9") === 0;
+    const amount = neg ? text.slice(2) : text.slice(1);
+    return (neg ? "-" : "") + '<span class="rc-currency" aria-label="\u20B9">\u20B9</span>' + esc(amount);
+  };
   const lines = items
     .map(
       (it) => `

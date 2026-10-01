@@ -505,6 +505,7 @@ table.table { width: 100%; border-collapse: collapse; }
 .label-card.selected .chk { background: var(--primary); border-color: var(--primary); color: #fff; }
 .label-card .chk .ic { width: 14px; height: 14px; stroke-width: 3; }
 .label-card img { width: 120px; height: 120px; display: block; margin: 6px auto 8px; }
+.label-card img.barcode-img { width: 180px; height: 72px; object-fit: contain; margin: 30px auto 26px; }
 .label-card .nm { font-weight: 700; line-height: 1.25; }
 .label-card .sk { font-size: 12px; color: var(--muted); font-weight: 600; }
 .label-card .pr { font-weight: 800; font-size: 16px; margin-top: 4px; }
@@ -513,7 +514,13 @@ table.table { width: 100%; border-collapse: collapse; }
 .label-sheet { display: flex; flex-wrap: wrap; gap: 3mm; font-family: var(--font); color: #000; }
 .plabel { border: 0.3mm solid #222; border-radius: 2mm; padding: 2mm; display: flex; align-items: center; gap: 2.5mm; break-inside: avoid; overflow: hidden; background: #fff; }
 .plabel img { flex: none; display: block; }
+.plabel img.qr-img { object-fit: contain; }
+.plabel img.barcode-img { object-fit: fill; }
 .plabel .txt { min-width: 0; line-height: 1.15; }
+.plabel.type-barcode img.barcode-img { object-fit: fill; }
+.plabel.type-barcode.sz-sm img.barcode-img { width: 24mm; height: 10mm; }
+.plabel.type-barcode.sz-md img.barcode-img { width: 28mm; height: 13mm; }
+.plabel.type-barcode.sz-lg img.barcode-img { width: 40mm; height: 18mm; }
 .plabel .n { font-weight: 800; }
 .plabel .s { font-family: ui-monospace, Menlo, Consolas, monospace; }
 .plabel .p { font-weight: 900; }
@@ -803,5 +810,7 @@ html.nav-collapsed .pos { grid-template-columns: minmax(0, 1fr) 420px; }
 
 /* Some older Windows monospace fonts do not include the Indian rupee glyph. */
 .receipt .rc-currency {
-  font-family: "Segoe UI Symbol", "Segoe UI", Arial, sans-serif;
+  font-family: "Noto Sans", "Segoe UI Symbol", "Segoe UI", Arial, sans-serif !important;
+  font-weight: 400;
+  display: inline-block;
 }

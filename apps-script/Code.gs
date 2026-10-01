@@ -51,7 +51,7 @@ var SCHEMA = {
   SyncLog: [['opId', 's'], ['appliedAt', 'd'], ['deviceId', 's'], ['type', 's'], ['ok', 'b'], ['message', 's']]
 };
 var SETTING_KEYS = ['storeName', 'address', 'phone', 'taxId', 'currency', 'taxLabel', 'upiId', 'receiptFooter',
-  'themeColor', 'sidebarTheme', 'productImageMode'];
+  'themeColor', 'sidebarTheme', 'productImageMode', 'productLabelCode'];
 
 /* ------------------------------------------------------------------ */
 /* HTTP entry points                                                   */

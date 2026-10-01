@@ -16,8 +16,8 @@ import { $, $$, esc, hydrateIcons, icon, toast } from "./ui.js";
 const routes = {
   dashboard: { title: "Dashboard", sub: () => state.settings.storeName, mod: dashboard },
   pos: { title: "POS / Billing", sub: () => "F2 search · F4 scan · F8 hold · F9 pay", mod: pos },
-  inventory: { title: "Inventory", sub: () => "Products, stock levels & QR codes", mod: inventory },
-  labels: { title: "QR Labels", sub: () => "Print scannable product labels", mod: labels },
+  inventory: { title: "Inventory", sub: () => "Products, stock levels & product codes", mod: inventory },
+  labels: { title: "Product Labels", sub: () => "Print scannable product labels", mod: labels },
   sales: { title: "Invoices", sub: () => "Sales history & receipts", mod: sales },
   settings: { title: "Settings", sub: () => "Data, sync, offline & store profile", mod: settings },
 };
