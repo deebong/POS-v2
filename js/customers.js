@@ -5,6 +5,8 @@ import { openInvoiceById } from "./sales.js";
 import { HISTORY_DAYS, state } from "./store.js";
 import { $, debounce, esc, fmtDateTime, icon, methodBadge, money, num, openModal } from "./ui.js";
 
+let root = null;
+
 function keyFor(s) {
   const phone = String(s.customerPhone || "").trim().toLowerCase();
   const name = String(s.customerName || "").trim().toLowerCase();
