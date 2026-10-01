@@ -15,6 +15,7 @@ import * as cashDrawer from "./cash-drawer.js";
 import * as eodClosing from "./eod-closing.js";
 import * as auditLog from "./audit-log.js";
 import * as lowStock from "./low-stock.js";
+import * as reports from "./reports.js";
 import { openScanner } from "./scanner.js";
 import * as settings from "./settings.js";
 import { findByCode, loadAll, refreshData, reloadLocal, state } from "./store.js";
@@ -33,6 +34,7 @@ const routes = {
   closing: { title: "End-of-Day Closing", sub: () => "Reconcile sales, payments & drawer", mod: eodClosing },
   audit: { title: "Audit Log", sub: () => "Operator activity & important POS actions", mod: auditLog },
   lowStock: { title: "Low Stock", sub: () => "Reorder alerts & stock exceptions", mod: lowStock },
+  reports: { title: "Reports", sub: () => "Sales, payments & product performance", mod: reports },
   settings: { title: "Settings", sub: () => "Data, sync, offline & store profile", mod: settings },
 };
 
