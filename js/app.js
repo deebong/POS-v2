@@ -9,6 +9,7 @@ import { initPwa, promptInstall, pwa, renderInstallBar } from "./pwa.js";
 import { applyTheme } from "./theme.js";
 import * as sales from "./sales.js";
 import * as customers from "./customers.js";
+import * as returns from "./returns-exchanges.js";
 import { openScanner } from "./scanner.js";
 import * as settings from "./settings.js";
 import { findByCode, loadAll, refreshData, reloadLocal, state } from "./store.js";
@@ -21,294 +22,36 @@ const routes = {
   labels: { title: "Product Labels", sub: () => "Print scannable product labels", mod: labels },
   sales: { title: "Invoices", sub: () => "Sales history & receipts", mod: sales },
   customers: { title: "Customers", sub: () => "Customer directory & purchase history", mod: customers },
+  returns: { title: "Returns & Exchanges", sub: () => "Returns, refunds & exchanges", mod: returns },
   settings: { title: "Settings", sub: () => "Data, sync, offline & store profile", mod: settings },
 };
 
-let current = null; // { name, mod, view }
+let current = null;
 let refreshPending = false;
-
 async function navigate() {
   const name = location.hash.replace(/^#\/?/, "").split("?")[0] || "dashboard";
   const key = routes[name] ? name : "dashboard";
   const route = routes[key];
-
   if (current && current.mod.unmount) current.mod.unmount();
-
   const old = document.getElementById("view");
-  const view = old.cloneNode(false);
-  view.className = "view";
-  old.replaceWith(view);
-
+  const view = old.cloneNode(false); view.className = "view"; old.replaceWith(view);
   $$("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.route === key));
-  $("#pageTitle").textContent = route.title;
-  $("#pageSub").textContent = route.sub();
-  document.title = `${route.title} · ${state.settings.storeName}`;
+  $("#pageTitle").textContent = route.title; $("#pageSub").textContent = route.sub(); document.title = `${route.title} · ${state.settings.storeName}`;
   current = { name: key, mod: route.mod, view };
-
-  try {
-    await route.mod.mount(view);
-  } catch (e) {
-    console.error(e);
-    view.innerHTML = `<div class="empty"><div class="big">⚠️</div><h4>Something went wrong</h4><p>${esc(e.message || "Unable to load this page")}</p><button class="btn btn-primary" onclick="location.reload()" style="margin-top:12px">Reload</button></div>`;
-  }
+  try { await route.mod.mount(view); } catch (e) { console.error(e); view.innerHTML = `<div class="empty"><div class="big">⚠️</div><h4>Something went wrong</h4><p>${esc(e.message || "Unable to load this page")}</p><button class="btn btn-primary" onclick="location.reload()" style="margin-top:12px">Reload</button></div>`; }
 }
-
-function applyBrand() {
-  applyTheme(state.settings);
-  $("#brandName").textContent = state.settings.storeName;
-  if (current) {
-    document.title = `${routes[current.name].title} · ${state.settings.storeName}`;
-    $("#pageSub").textContent = routes[current.name].sub();
-  }
-  renderSync();
-}
-
-function tickClock() {
-  const now = new Date();
-  $("#clockTime").textContent = now.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  $("#clockDate").textContent = now.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-}
-
-const hhmm = (d) => (d ? new Date(d).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "…");
-
-/* ---------- sync status pill + banner ---------- */
-function renderSync() {
-  const mode = getConfig().mode;
-  const m = state.meta;
-  const st = currentStatus() || {};
-  const pill = $("#syncPill");
-  const txt = $("#syncText");
-  const banner = $("#banner");
-  pill.className = "sync-pill";
-  let bannerHtml = "";
-  let bannerKind = "";
-
-  if (mode === "local") {
-    pill.classList.add("demo");
-    txt.textContent = "This PC";
-    pill.title = "Data is stored on this PC only (works offline). Click to connect Google Sheets.";
-  } else if (mode === "hybrid") {
-    const pending = st.pending || 0;
-    if (st.syncing || m.syncing) {
-      pill.classList.add("busy");
-      txt.textContent = pending ? `Syncing ${pending}…` : "Syncing…";
-    } else if (!navigator.onLine) {
-      pill.classList.add("offline");
-      txt.textContent = pending ? `Offline · ${pending} to sync` : "Offline";
-      bannerKind = "warn";
-      bannerHtml = `${icon("wifiOff")}<span><b>You're offline.</b> Keep selling — everything is saved on this PC and will sync to Google Sheets automatically when the internet is back.</span>`;
-    } else if (st.lastError) {
-      pill.classList.add("err");
-      txt.textContent = pending ? `Sync issue · ${pending} waiting` : "Sync issue";
-      bannerKind = "err";
-      bannerHtml = `${icon("alert")}<span><b>Couldn't sync with Google Sheets.</b> ${esc(st.lastError)} Your data is safe on this PC.</span>
-        <button class="btn btn-sm btn-outline" id="bnRetry">Retry</button><a class="btn btn-sm btn-ghost" href="#/settings">Settings</a>`;
-    } else if (pending) {
-      pill.classList.add("busy");
-      txt.textContent = `${pending} to sync`;
-    } else {
-      pill.classList.add("ok");
-      txt.textContent = `Synced ${hhmm(st.lastSyncAt)}`;
-    }
-    pill.title = `Offline-first: saved on this PC, synced with Google Sheets.${st.lastSyncAt ? " Last sync " + new Date(st.lastSyncAt).toLocaleString() : ""} Click to sync now.`;
-  } else {
-    if (m.syncing) {
-      pill.classList.add("busy");
-      txt.textContent = "Syncing…";
-    } else if (m.error) {
-      pill.classList.add("err");
-      txt.textContent = "Sync failed";
-      pill.title = m.error;
-      bannerKind = "err";
-      bannerHtml = `${icon("alert")}<span><b>Can't reach Google Sheets.</b> ${esc(m.error)} ${navigator.onLine ? "" : "“Google Sheets live” mode needs internet — switch to “This PC + Google Sheets” to keep selling offline."}</span>
-        <button class="btn btn-sm btn-outline" id="bnRetry">Retry</button><a class="btn btn-sm btn-ghost" href="#/settings">Settings</a>`;
-    } else {
-      pill.classList.add("ok");
-      txt.textContent = `Live · ${hhmm(m.syncedAt)}`;
-      pill.title = "Every action goes straight to Google Sheets. Click to sync now.";
-    }
-  }
-
-  banner.className = `banner ${bannerKind ? "banner-" + bannerKind : "hidden"}`;
-  banner.innerHTML = bannerHtml;
-  const retry = $("#bnRetry");
-  if (retry) {
-    retry.onclick = async () => {
-      await refreshData();
-      renderSync();
-      if (getConfig().mode === "sheets" && !state.meta.error) navigate();
-    };
-  }
-}
-
-async function onPillClick() {
-  const mode = getConfig().mode;
-  if (mode === "local") {
-    location.hash = "#/settings";
-    return;
-  }
-  if (mode === "hybrid" && !navigator.onLine) {
-    toast(`Offline — ${(currentStatus() || {}).pending || 0} change(s) will sync when you're back online`, "warn");
-    return;
-  }
-  const changed = await refreshData();
-  const st = currentStatus() || {};
-  const err = mode === "hybrid" ? st.lastError : state.meta.error;
-  if (err) toast(err, "error");
-  else toast(changed ? "Synced — new changes loaded" : "Everything is up to date");
-}
-
-function applyDataChange() {
-  if (!current) return;
-  if (document.querySelector(".modal-backdrop")) {
-    refreshPending = true;
-    return;
-  }
-  refreshPending = false;
-  if (current.mod.refresh) current.mod.refresh();
-  else current.mod.mount(current.view);
-}
-
-function startPolling() {
-  const tick = async () => {
-    const mode = getConfig().mode;
-    if (document.visibilityState !== "visible" || mode === "local" || !navigator.onLine) return;
-    if (document.querySelector(".modal-backdrop")) return;
-    await refreshData();
-  };
-  setInterval(() => {
-    if (refreshPending && !document.querySelector(".modal-backdrop")) applyDataChange();
-    else tick();
-  }, 45_000);
-  document.addEventListener("visibilitychange", tick);
-  window.addEventListener("online", () => {
-    renderSync();
-    if (getConfig().mode === "sheets") refreshData();
-  });
-  window.addEventListener("offline", renderSync);
-}
-
-/* ---------- PWA install button + bar ---------- */
-function renderInstall() {
-  $("#installBtn").classList.toggle("hidden", pwa.installed);
-  renderInstallBar();
-}
-
-/* ---------- dock / undock the side menu ---------- */
-function renderDock() {
-  const docked = document.documentElement.classList.contains("nav-collapsed");
-  const btn = $("#dockBtn");
-  btn.innerHTML = `${icon(docked ? "chevronsRight" : "chevronsLeft")}<span class="txt">${docked ? "Undock menu" : "Dock menu"}</span>`;
-  btn.title = docked ? "Show the full menu" : "Dock the menu to give the main area more room";
-}
-function toggleDock() {
-  const docked = document.documentElement.classList.toggle("nav-collapsed");
-  localStorage.setItem("pos.navCollapsed", docked ? "1" : "0");
-  renderDock();
-}
-
-/* ---------- one window at a time (they share the same offline data) ---------- */
-function holdLock(onLost) {
-  return new Promise((resolve) => {
-    navigator.locks.request("freshmart-pos-window", { ifAvailable: true }, (lock) => {
-      if (!lock) {
-        resolve(false);
-        return undefined;
-      }
-      resolve(true);
-      return new Promise((release) => onLost(release));
-    });
-  });
-}
-
-async function singleWindowGuard() {
-  if (!navigator.locks || !window.BroadcastChannel) return;
-  const channel = new BroadcastChannel("freshmart-pos-window");
-  let releaseLock = null;
-  const onLost = (release) => (releaseLock = release);
-  const showBlocked = (text) => {
-    const o = document.createElement("div");
-    o.className = "tab-lock";
-    o.innerHTML = `<div class="tab-lock-card"><div class="big">🪟</div><h3>FreshMart POS is open in another window</h3>
-      <p>${text}</p><button class="btn btn-primary" id="useHere">Use it in this window</button></div>`;
-    document.body.appendChild(o);
-    return o;
-  };
-  channel.onmessage = (e) => {
-    if (e.data === "takeover" && releaseLock) {
-      releaseLock();
-      releaseLock = null;
-      document.body.innerHTML = "";
-      const o = showBlocked("You switched to another window. Only one window can be used at a time so offline data stays consistent.");
-      o.querySelector("#useHere").onclick = () => location.reload();
-    }
-  };
-  if (await holdLock(onLost)) return;
-  await new Promise((resolve) => {
-    const o = showBlocked("To keep the offline data consistent, the POS runs in one window at a time.");
-    o.querySelector("#useHere").onclick = async () => {
-      o.querySelector("#useHere").disabled = true;
-      channel.postMessage("takeover");
-      navigator.locks.request("freshmart-pos-window", () => {
-        o.remove();
-        resolve();
-        return new Promise((release) => onLost(release));
-      });
-    };
-  });
-}
-
-async function handleGlobalCode(code) {
-  if (/^INV-/i.test(code)) {
-    const ok = await sales.openInvoiceByNo(code);
-    return ok ? { ok: true, message: "Invoice found" } : { ok: false, message: `Invoice ${code} not found` };
-  }
-  const p = findByCode(code);
-  if (!p) return { ok: false, message: `No product for "${code}"` };
-  inventory.showProductCard(p, { onSaved: () => navigate() });
-  return { ok: true, message: `${p.emoji} ${p.name}` };
-}
-
-async function init() {
-  hydrateIcons(document);
-  $("#brandLogo").innerHTML = icon("bag");
-  initPwa();
-  await singleWindowGuard();
-  tickClock();
-  setInterval(tickClock, 20_000);
-
-  window.addEventListener("sync:status", renderSync);
-  window.addEventListener("data:changed", applyDataChange);
-  window.addEventListener("settings:changed", applyBrand);
-  window.addEventListener("pos:synced", () => reloadLocal());
-  window.addEventListener("pwa:status", renderInstall);
-  $("#syncPill").addEventListener("click", onPillClick);
-  $("#installBtn").addEventListener("click", promptInstall);
-  $("#dockBtn").addEventListener("click", toggleDock);
-  $("#dockTop").addEventListener("click", toggleDock);
-  window.addEventListener("data:changed", () => applyTheme(state.settings));
-  renderDock();
-  $("#globalScan").addEventListener("click", () => {
-    if (current && current.name === "pos") return pos.startScan();
-    openScanner({ title: "Scan code", onCode: handleGlobalCode });
-  });
-
-  try {
-    await loadAll();
-  } catch (e) {
-    console.error(e);
-    if (getConfig().mode === "hybrid") toast(e.message, "error");
-  }
-  initFolderBackup(() => backend.exportData()).catch(() => {});
-  applyTheme(state.settings);
-  $("#brandName").textContent = state.settings.storeName;
-  renderSync();
-  renderInstall();
-
-  window.addEventListener("hashchange", navigate);
-  navigate();
-  startPolling();
-  if (getConfig().mode === "hybrid") refreshData();
-}
-
+function applyBrand(){applyTheme(state.settings);$("#brandName").textContent=state.settings.storeName;if(current){document.title=`${routes[current.name].title} · ${state.settings.storeName}`;$("#pageSub").textContent=routes[current.name].sub();}renderSync();}
+function tickClock(){const now=new Date();$("#clockTime").textContent=now.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"});$("#clockDate").textContent=now.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"});}
+const hhmm=d=>d?new Date(d).toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"}):"…";
+function renderSync(){const mode=getConfig().mode,m=state.meta,st=currentStatus()||{},pill=$("#syncPill"),txt=$("#syncText"),banner=$("#banner");pill.className="sync-pill";let bannerHtml="",bannerKind="";if(mode==="local"){pill.classList.add("demo");txt.textContent="This PC";pill.title="Data is stored on this PC only (works offline). Click to connect Google Sheets.";}else if(mode==="hybrid"){const pending=st.pending||0;if(st.syncing||m.syncing){pill.classList.add("busy");txt.textContent=pending?`Syncing ${pending}…`:"Syncing…";}else if(!navigator.onLine){pill.classList.add("offline");txt.textContent=pending?`Offline · ${pending} to sync`:"Offline";bannerKind="warn";bannerHtml=`${icon("wifiOff")}<span><b>You're offline.</b> Keep selling — everything is saved on this PC and will sync to Google Sheets automatically when the internet is back.</span>`;}else if(st.lastError){pill.classList.add("err");txt.textContent=pending?`Sync issue · ${pending} waiting`:"Sync issue";bannerKind="err";bannerHtml=`${icon("alert")}<span><b>Couldn't sync with Google Sheets.</b> ${esc(st.lastError)} Your data is safe on this PC.</span><button class="btn btn-sm btn-outline" id="bnRetry">Retry</button><a class="btn btn-sm btn-ghost" href="#/settings">Settings</a>`;}else if(pending){pill.classList.add("busy");txt.textContent=`${pending} to sync`;}else{pill.classList.add("ok");txt.textContent=`Synced ${hhmm(st.lastSyncAt)}`;}pill.title=`Offline-first: saved on this PC, synced with Google Sheets.${st.lastSyncAt?" Last sync "+new Date(st.lastSyncAt).toLocaleString():""} Click to sync now.`;}else{if(m.syncing){pill.classList.add("busy");txt.textContent="Syncing…";}else if(m.error){pill.classList.add("err");txt.textContent="Sync failed";pill.title=m.error;bannerKind="err";bannerHtml=`${icon("alert")}<span><b>Can't reach Google Sheets.</b> ${esc(m.error)}</span><button class="btn btn-sm btn-outline" id="bnRetry">Retry</button><a class="btn btn-sm btn-ghost" href="#/settings">Settings</a>`;}else{pill.classList.add("ok");txt.textContent=`Live · ${hhmm(m.syncedAt)}`;pill.title="Every action goes straight to Google Sheets. Click to sync now.";}}banner.className=`banner ${bannerKind?"banner-"+bannerKind:"hidden"}`;banner.innerHTML=bannerHtml;const retry=$("#bnRetry");if(retry)retry.onclick=async()=>{await refreshData();renderSync();if(getConfig().mode==="sheets"&&!state.meta.error)navigate();};}
+async function onPillClick(){const mode=getConfig().mode;if(mode==="local"){location.hash="#/settings";return;}if(mode==="hybrid"&&!navigator.onLine){toast(`Offline — ${(currentStatus()||{}).pending||0} change(s) will sync when you're back online`,"warn");return;}const changed=await refreshData();const st=currentStatus()||{};const err=mode==="hybrid"?st.lastError:state.meta.error;if(err)toast(err,"error");else toast(changed?"Synced — new changes loaded":"Everything is up to date");}
+function applyDataChange(){if(!current)return;if(document.querySelector(".modal-backdrop")){refreshPending=true;return;}refreshPending=false;if(current.mod.refresh)current.mod.refresh();else current.mod.mount(current.view);}
+function startPolling(){const tick=async()=>{const mode=getConfig().mode;if(document.visibilityState!=="visible"||mode==="local"||!navigator.onLine)return;if(document.querySelector(".modal-backdrop"))return;await refreshData();};setInterval(()=>{if(refreshPending&&!document.querySelector(".modal-backdrop"))applyDataChange();else tick();},45000);document.addEventListener("visibilitychange",tick);window.addEventListener("online",()=>{renderSync();if(getConfig().mode==="sheets")refreshData();});window.addEventListener("offline",renderSync);}
+function renderInstall(){$("#installBtn").classList.toggle("hidden",pwa.installed);renderInstallBar();}
+function renderDock(){const docked=document.documentElement.classList.contains("nav-collapsed"),btn=$("#dockBtn");btn.innerHTML=`${icon(docked?"chevronsRight":"chevronsLeft")}<span class="txt">${docked?"Undock menu":"Dock menu"}</span>`;btn.title=docked?"Show the full menu":"Dock the menu to give the main area more room";}
+function toggleDock(){const docked=document.documentElement.classList.toggle("nav-collapsed");localStorage.setItem("pos.navCollapsed",docked?"1":"0");renderDock();}
+function holdLock(onLost){return new Promise(resolve=>{navigator.locks.request("freshmart-pos-window",{ifAvailable:true},lock=>{if(!lock){resolve(false);return undefined;}resolve(true);return new Promise(release=>onLost(release));});});}
+async function singleWindowGuard(){if(!navigator.locks||!window.BroadcastChannel)return;const channel=new BroadcastChannel("freshmart-pos-window");let releaseLock=null;const onLost=release=>releaseLock=release;const showBlocked=text=>{const o=document.createElement("div");o.className="tab-lock";o.innerHTML=`<div class="tab-lock-card"><div class="big">🪟</div><h3>FreshMart POS is open in another window</h3><p>${text}</p><button class="btn btn-primary" id="useHere">Use it in this window</button></div>`;document.body.appendChild(o);return o;};channel.onmessage=e=>{if(e.data==="takeover"&&releaseLock){releaseLock();releaseLock=null;document.body.innerHTML="";const o=showBlocked("You switched to another window. Only one window can be used at a time so offline data stays consistent.");o.querySelector("#useHere").onclick=()=>location.reload();}};if(await holdLock(onLost))return;await new Promise(resolve=>{const o=showBlocked("To keep the offline data consistent, the POS runs in one window at a time.");o.querySelector("#useHere").onclick=async()=>{o.querySelector("#useHere").disabled=true;channel.postMessage("takeover");navigator.locks.request("freshmart-pos-window",()=>{o.remove();resolve();return new Promise(release=>onLost(release));});};});}
+async function handleGlobalCode(code){if(/^INV-/i.test(code)){const ok=await sales.openInvoiceByNo(code);return ok?{ok:true,message:"Invoice found"}:{ok:false,message:`Invoice ${code} not found`};}const p=findByCode(code);if(!p)return{ok:false,message:`No product for "${code}"`};inventory.showProductCard(p,{onSaved:()=>navigate()});return{ok:true,message:`${p.emoji} ${p.name}`};}
+async function init(){hydrateIcons(document);$("#brandLogo").innerHTML=icon("bag");initPwa();await singleWindowGuard();tickClock();setInterval(tickClock,20000);window.addEventListener("sync:status",renderSync);window.addEventListener("data:changed",applyDataChange);window.addEventListener("settings:changed",applyBrand);window.addEventListener("pos:synced",()=>reloadLocal());window.addEventListener("pwa:status",renderInstall);$("#syncPill").addEventListener("click",onPillClick);$("#installBtn").addEventListener("click",promptInstall);$("#dockBtn").addEventListener("click",toggleDock);$("#dockTop").addEventListener("click",toggleDock);window.addEventListener("data:changed",()=>applyTheme(state.settings));renderDock();$("#globalScan").addEventListener("click",()=>{if(current&&current.name==="pos")return pos.startScan();openScanner({title:"Scan code",onCode:handleGlobalCode});});try{await loadAll();}catch(e){console.error(e);if(getConfig().mode==="hybrid")toast(e.message,"error");}initFolderBackup(()=>backend.exportData()).catch(()=>{});applyTheme(state.settings);$("#brandName").textContent=state.settings.storeName;renderSync();renderInstall();window.addEventListener("hashchange",navigate);navigate();startPolling();if(getConfig().mode==="hybrid")refreshData();}
 init();
