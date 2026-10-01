@@ -1,40 +1,87 @@
 // Cross-module UX standards shared by the static POS shell.
-// Keeps newly added pages aligned with the established shell instead of duplicating page titles.
+// Keeps every Store page aligned with the established shell instead of duplicating page titles.
 (() => {
   const STYLE_ID = "ux-standards-style";
   if (!document.getElementById(STYLE_ID)) {
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-      /* The top shell already owns the page title/subtitle. Keep body modules focused on content. */
+      /* Global header: the bold page title stays in the shell and is vertically centered. */
+      .topbar .title-wrap {
+        align-self: stretch;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        min-width: 0;
+      }
+      .topbar h1 { line-height: 1.12; }
+      .topbar .sub { line-height: 1.25; }
+
+      /* Store pages: keep only the bold title in the global header and move the descriptive
+         subtitle into the body area where the old duplicated heading used to occupy space.
+         Dashboard and POS deliberately keep their existing header treatment. */
+      body:has(#nav a[data-route="inventory"].active) .topbar .sub,
+      body:has(#nav a[data-route="labels"].active) .topbar .sub,
+      body:has(#nav a[data-route="sales"].active) .topbar .sub,
+      body:has(#nav a[data-route="customers"].active) .topbar .sub,
+      body:has(#nav a[data-route="settings"].active) .topbar .sub,
+      body:has(#nav a[data-route="procurement"].active) .topbar .sub {
+        display: none;
+      }
       body:has(#nav a[data-route="inventory"].active) #view .page-head > div:first-child,
       body:has(#nav a[data-route="labels"].active) #view .page-head > div:first-child,
       body:has(#nav a[data-route="sales"].active) #view .page-head > div:first-child,
       body:has(#nav a[data-route="customers"].active) #view .page-head > div:first-child,
       body:has(#nav a[data-route="settings"].active) #view .page-head > div:first-child,
       body:has(#nav a[data-route="procurement"].active) #view .proc-head > div:first-child {
+        display: block;
+        min-width: 0;
+      }
+      body:has(#nav a[data-route="inventory"].active) #view .page-head > div:first-child h2,
+      body:has(#nav a[data-route="labels"].active) #view .page-head > div:first-child h2,
+      body:has(#nav a[data-route="sales"].active) #view .page-head > div:first-child h2,
+      body:has(#nav a[data-route="customers"].active) #view .page-head > div:first-child h2,
+      body:has(#nav a[data-route="settings"].active) #view .page-head > div:first-child h2,
+      body:has(#nav a[data-route="procurement"].active) #view .proc-head > div:first-child h2 {
         display: none;
+      }
+      body:has(#nav a[data-route="inventory"].active) #view .page-head > div:first-child p,
+      body:has(#nav a[data-route="labels"].active) #view .page-head > div:first-child p,
+      body:has(#nav a[data-route="sales"].active) #view .page-head > div:first-child p,
+      body:has(#nav a[data-route="customers"].active) #view .page-head > div:first-child p,
+      body:has(#nav a[data-route="settings"].active) #view .page-head > div:first-child p,
+      body:has(#nav a[data-route="procurement"].active) #view .proc-head > div:first-child p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.4;
       }
       body:has(#nav a[data-route="inventory"].active) #view .page-head,
       body:has(#nav a[data-route="labels"].active) #view .page-head,
       body:has(#nav a[data-route="sales"].active) #view .page-head,
       body:has(#nav a[data-route="customers"].active) #view .page-head,
       body:has(#nav a[data-route="settings"].active) #view .page-head {
-        justify-content: flex-end;
-        min-height: 0;
-        margin-bottom: 16px;
+        align-items: center;
+        min-height: 40px;
+        margin-bottom: 20px;
       }
       body:has(#nav a[data-route="procurement"].active) #view .proc-head {
-        justify-content: flex-end;
-        min-height: 0;
+        align-items: center !important;
       }
-      /* Textareas in supplier forms use the same vertical rhythm as the standard inputs. */
+
+      /* Supplier textareas: two-line content is vertically centered in the standard field. */
       #view .proc-wrap textarea.input {
         box-sizing: border-box;
+        height: 52px;
         min-height: 52px;
-        padding: 11px 14px;
-        line-height: 1.45;
+        padding: 6px 14px;
+        line-height: 20px;
+        resize: vertical;
       }
+
+      /* POS product-card overlays must sit above the product image. */
+      #view .pcard .sku,
+      #view .pcard .in-cart { z-index: 2; }
     `;
     document.head.appendChild(style);
   }
