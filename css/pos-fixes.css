@@ -1,0 +1,25 @@
+/* POS card layout fixes
+   Keep these overrides isolated from the shared design system so POS-only
+   spacing changes cannot affect Inventory, Customers, Purchases, etc.
+*/
+
+/* Keep the stock line inside every POS product card when the catalog has
+   enough products to create additional grid rows. */
+.product-grid .pcard {
+  min-height: 196px;
+  height: auto;
+  overflow: hidden;
+}
+
+.product-grid .pcard .pic {
+  flex: 0 0 70px;
+}
+
+.product-grid .pcard .nm {
+  flex: 0 0 auto;
+}
+
+.product-grid .pcard .row {
+  flex: 0 0 auto;
+  margin-top: auto;
+}

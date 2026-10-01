@@ -1,12 +1,12 @@
 /* FreshMart POS service worker — makes the app installable and lets it start with no internet.
  * App files are pre-cached ("app shell"); your data lives in IndexedDB, not here.
  * Bump VERSION whenever any app-shell file changes. Updates are activated automatically. */
-const VERSION = "ci-4eb502359a7a";
+const VERSION = "ci-99b44e58810b";
 const CACHE = `freshmart-pos-${VERSION}`;
 const FONT_CACHE = "freshmart-pos-fonts";
 const IMG_CACHE = "freshmart-pos-images";
 const ASSETS = [
-  "index.html", "manifest.webmanifest", "css/styles.css", "css/custom-select.css", "css/procurement.css", "css/returns.css",
+  "index.html", "manifest.webmanifest", "css/styles.css", "css/pos-fixes.css", "css/custom-select.css", "css/procurement.css", "css/returns.css",
   "vendor/jsQR.js", "vendor/qrcode.js", "apps-script/Code.gs", "apps-script/Procurement.gs", "apps-script/Returns.gs",
   "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png", "icons/apple-touch-icon.png", "icons/favicon-32.png",
   "js/app.js", "js/analytics.js", "js/barcode.js", "js/custom-select.js", "js/procurement-router.js", "js/procurement.js", "js/returns-exchanges.js", "js/customers.js", "js/ux-standards.js", "js/performance.js",
