@@ -62,7 +62,10 @@ function showCustomer(c) {
       </table></div>`,
     footer: `<button class="btn btn-outline" data-close>Close</button>`,
   });
-  modal.$("[data-close]").onclick = () => modal.close();
+  // openModal has a separate close button in the modal header; query the footer explicitly
+  // so the visible "Close" action is wired to this modal as well.
+  const footerClose = modal.foot?.querySelector("[data-close]");
+  if (footerClose) footerClose.onclick = () => modal.close();
   modal.body.querySelectorAll("tr[data-invoice]").forEach((row) => {
     row.addEventListener("click", () => openInvoiceById(Number(row.dataset.invoice), { onChange: () => modal.close() }));
   });
