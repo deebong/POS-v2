@@ -41,6 +41,15 @@
     if (settings) nav.insertBefore(a, settings); else nav.appendChild(a);
   }
 
+  if (!nav.querySelector('[data-route="lowStock"]')) {
+    const a = document.createElement("a");
+    a.href = "#/lowStock";
+    a.dataset.route = "lowStock";
+    a.title = "Low Stock";
+    a.innerHTML = '<span data-icon="alert"></span><span class="txt">Low Stock</span>';
+    if (settings) nav.insertBefore(a, settings); else nav.appendChild(a);
+  }
+
   if (!document.querySelector('link[data-cash-drawer-css="1"]')) {
     const link = document.createElement("link");
     link.rel = "stylesheet";
@@ -60,6 +69,13 @@
     link.rel = "stylesheet";
     link.href = "css/audit-log.css";
     link.dataset.auditLogCss = "1";
+    document.head.appendChild(link);
+  }
+  if (!document.querySelector('link[data-low-stock-css="1"]')) {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "css/low-stock.css";
+    link.dataset.lowStockCss = "1";
     document.head.appendChild(link);
   }
 

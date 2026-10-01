@@ -21,6 +21,7 @@
     <link rel="stylesheet" href="css/custom-select.css" />
     <link rel="stylesheet" href="css/procurement.css" />
     <link rel="stylesheet" href="css/returns.css" data-returns-css="1" />
+    <link rel="stylesheet" href="css/low-stock.css" data-low-stock-css="1" />
     <style>
       /* Supplier/Purchase page uses the same full-width content grid as the other store pages. */
       #view > .proc-wrap { width: 100% !important; max-width: none !important; margin-left: 0 !important; margin-right: 0 !important; }
@@ -60,7 +61,6 @@
           </div>
         </div>
 
-        <div class="nav-label">Store</div>
         <nav class="nav" id="nav">
           <a href="#/dashboard" data-route="dashboard" title="Dashboard"><span data-icon="dashboard"></span><span class="txt">Dashboard</span></a>
           <a href="#/pos" data-route="pos" title="POS / Billing"><span data-icon="cart"></span><span class="txt">POS / Billing</span></a>
@@ -69,13 +69,15 @@
           <a href="#/sales" data-route="sales" title="Invoices"><span data-icon="receipt"></span><span class="txt">Invoices</span></a>
           <a href="#/customers" data-route="customers" title="Customers"><span data-icon="user"></span><span class="txt">Customers</span></a>
           <a href="#/procurement" data-route="procurement" title="Suppliers & Purchases"><span data-icon="package"></span><span class="txt">Purchases</span></a>
+          <a href="#/returns" data-route="returns" title="Returns & Exchanges"><span data-icon="undo"></span><span class="txt">Returns</span></a>
+          <a href="#/cashDrawer" data-route="cashDrawer" title="Cash Drawer"><span data-icon="cash"></span><span class="txt">Cash Drawer</span></a>
+          <a href="#/closing" data-route="closing" title="End-of-Day Closing"><span data-icon="receipt"></span><span class="txt">Day Close</span></a>
+          <a href="#/audit" data-route="audit" title="Audit Log"><span data-icon="list"></span><span class="txt">Audit Log</span></a>
+          <a href="#/lowStock" data-route="lowStock" title="Low Stock"><span data-icon="alert"></span><span class="txt">Low Stock</span></a>
           <a href="#/settings" data-route="settings" title="Settings"><span data-icon="settings"></span><span class="txt">Settings</span></a>
         </nav>
 
         <div class="sidebar-foot">
-          <button class="dock-btn" id="dockBtn" title="Dock the menu to give the main area more room">
-            <span data-icon="chevronsLeft"></span><span class="txt">Dock menu</span>
-          </button>
           <div class="cashier-card">
             <div class="avatar">AI</div>
             <div class="meta">

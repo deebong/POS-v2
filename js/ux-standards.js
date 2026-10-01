@@ -25,7 +25,8 @@
       body:has(#nav a[data-route="sales"].active) .topbar .sub,
       body:has(#nav a[data-route="customers"].active) .topbar .sub,
       body:has(#nav a[data-route="settings"].active) .topbar .sub,
-      body:has(#nav a[data-route="procurement"].active) .topbar .sub {
+      body:has(#nav a[data-route="procurement"].active) .topbar .sub,
+      body:has(#nav a[data-route="lowStock"].active) .topbar .sub {
         display: none;
       }
       body:has(#nav a[data-route="inventory"].active) #view .page-head > div:first-child,
