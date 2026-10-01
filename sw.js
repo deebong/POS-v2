@@ -1,7 +1,7 @@
 /* FreshMart POS service worker — makes the app installable and lets it start with no internet.
  * App files are pre-cached ("app shell"); your data lives in IndexedDB, not here.
- * Bump VERSION whenever any file below changes. Updates are activated automatically. */
-const VERSION = "ci-017d35d2cf0a";
+ * Bump VERSION whenever any app-shell file changes. Updates are activated automatically. */
+const VERSION = "ci-4eb502359a7a";
 const CACHE = `freshmart-pos-${VERSION}`;
 const FONT_CACHE = "freshmart-pos-fonts";
 const IMG_CACHE = "freshmart-pos-images";

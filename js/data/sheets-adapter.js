@@ -6,36 +6,60 @@
 
 export function createSheetsAdapter({ url, key }) {
   async function call(action, payload = {}, { timeoutMs = 45000 } = {}) {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-    let res;
-    try {
-      res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action, ...(key ? { key } : {}), ...payload }),
-        redirect: "follow",
-        signal: ctrl.signal,
-      });
-    } catch (e) {
-      throw new Error(
-        e && e.name === "AbortError"
-          ? "Google Sheets took too long to respond. Try again."
-          : "Couldn't reach Google Sheets. Check your connection and the Web App URL.",
-      );
-    } finally {
-      clearTimeout(timer);
+    let lastError = null;
+
+    // Apps Script ContentService responses are redirected to a googleusercontent.com URL.
+    // A short retry helps with transient cold-start/redirect failures without making normal
+    // requests noticeably slower.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8", Accept: "application/json,text/plain,*/*" },
+          body: JSON.stringify({ action, ...(key ? { key } : {}), ...payload }),
+          redirect: "follow",
+          cache: "no-store",
+          signal: ctrl.signal,
+        });
+
+        const text = await res.text();
+        let data = null;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          lastError = new Error(
+            `Google Sheets returned a non-JSON response (HTTP ${res.status}). The Apps Script Web App may be unavailable or the deployment URL may be outdated.`,
+          );
+          if (attempt === 0) {
+            await new Promise((resolve) => setTimeout(resolve, 700));
+            continue;
+          }
+          throw lastError;
+        }
+
+        if (!res.ok) throw new Error((data && data.error) || `Google Sheets returned HTTP ${res.status}`);
+        if (!data || !data.ok) throw new Error((data && data.error) || "Request failed");
+        return data;
+      } catch (e) {
+        lastError = e;
+        if (e && e.name === "AbortError") {
+          throw new Error("Google Sheets took too long to respond. Try again.");
+        }
+        // Retry only transport/non-JSON failures. Do not repeat a valid Apps Script error
+        // such as an invalid action or access key.
+        const retryable = /non-JSON response|Couldn't reach Google Sheets|Failed to fetch|NetworkError|Load failed/i.test(String(e && e.message));
+        if (attempt === 0 && retryable) {
+          await new Promise((resolve) => setTimeout(resolve, 700));
+          continue;
+        }
+        throw e && e.message ? e : new Error("Couldn't reach Google Sheets. Check your connection and the Web App URL.");
+      } finally {
+        clearTimeout(timer);
+      }
     }
-    let data;
-    try {
-      data = JSON.parse(await res.text());
-    } catch {
-      throw new Error(
-        "That URL didn't return POS data. Deploy the script as a Web app with “Who has access: Anyone” and use the URL that ends in /exec.",
-      );
-    }
-    if (!data || !data.ok) throw new Error((data && data.error) || "Request failed");
-    return data;
+    throw lastError || new Error("Couldn't reach Google Sheets. Check your connection and the Web App URL.");
   }
 
   return {
