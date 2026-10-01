@@ -1,7 +1,7 @@
 /* FreshMart POS service worker — makes the app installable and lets it start with no internet.
  * App files are pre-cached ("app shell"); your data lives in IndexedDB, not here.
  * Bump VERSION whenever any file below changes: the app then shows an "Update" prompt. */
-const VERSION = "ci-ef6e90305644";
+const VERSION = "ci-cef72c55792c";
 const CACHE = `freshmart-pos-${VERSION}`;
 const FONT_CACHE = "freshmart-pos-fonts";
 const IMG_CACHE = "freshmart-pos-images"; // product photos from Google Drive / the web, for offline use
@@ -23,6 +23,7 @@ const ASSETS = [
   "js/analytics.js",
   "js/barcode.js",
   "js/custom-select.js",
+  "js/customers.js",
   "js/dashboard.js",
   "js/inventory.js",
   "js/labels.js",
@@ -53,8 +54,6 @@ const scopeUrl = new URL(self.registration.scope);
 const INDEX_URL = new URL("index.html", scopeUrl).href;
 
 self.addEventListener("install", (event) => {
-  // Each file is cached separately: one missing/renamed file on the web host must not stop the whole
-  // app from working offline (that's what made installs fail on some static hosts).
   event.waitUntil(
     (async () => {
       const cache = await caches.open(CACHE);
@@ -71,7 +70,6 @@ self.addEventListener("install", (event) => {
       if (!(await cache.match(INDEX_URL))) throw new Error("index.html could not be cached");
     })(),
   );
-  // First install activates immediately; updates wait until the user clicks "Update".
 });
 
 self.addEventListener("activate", (event) => {
@@ -91,7 +89,7 @@ self.addEventListener("message", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const req = event.request;
-  if (req.method !== "GET") return; // Google Sheets sync calls are POSTs → always straight to the network
+  if (req.method !== "GET") return;
   const url = new URL(req.url);
 
   if (url.origin === self.location.origin && url.pathname.startsWith(scopeUrl.pathname)) {
@@ -115,7 +113,6 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Product photos (Google Drive / other sites): cache-first so they also show offline.
   if (req.destination === "image" && url.origin !== self.location.origin) {
     event.respondWith(
       caches.open(IMG_CACHE).then(async (cache) => {
@@ -133,7 +130,6 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Google Fonts: serve from cache, refresh in the background (falls back to system fonts offline).
   if (url.hostname === "fonts.googleapis.com" || url.hostname === "fonts.gstatic.com") {
     event.respondWith(
       caches.open(FONT_CACHE).then(async (cache) => {

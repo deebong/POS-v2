@@ -8,6 +8,7 @@ import * as pos from "./pos.js";
 import { initPwa, promptInstall, pwa, renderInstallBar } from "./pwa.js";
 import { applyTheme } from "./theme.js";
 import * as sales from "./sales.js";
+import * as customers from "./customers.js";
 import { openScanner } from "./scanner.js";
 import * as settings from "./settings.js";
 import { findByCode, loadAll, refreshData, reloadLocal, state } from "./store.js";
@@ -19,6 +20,7 @@ const routes = {
   inventory: { title: "Inventory", sub: () => "Products, stock levels & product codes", mod: inventory },
   labels: { title: "Product Labels", sub: () => "Print scannable product labels", mod: labels },
   sales: { title: "Invoices", sub: () => "Sales history & receipts", mod: sales },
+  customers: { title: "Customers", sub: () => "Customer directory & purchase history", mod: customers },
   settings: { title: "Settings", sub: () => "Data, sync, offline & store profile", mod: settings },
 };
 
@@ -32,7 +34,6 @@ async function navigate() {
 
   if (current && current.mod.unmount) current.mod.unmount();
 
-  // Fresh element per navigation so a slow, superseded mount can't write into the new view.
   const old = document.getElementById("view");
   const view = old.cloneNode(false);
   view.className = "view";
@@ -160,7 +161,7 @@ async function onPillClick() {
 function applyDataChange() {
   if (!current) return;
   if (document.querySelector(".modal-backdrop")) {
-    refreshPending = true; // don't yank the UI while a dialog is open
+    refreshPending = true;
     return;
   }
   refreshPending = false;
@@ -189,7 +190,6 @@ function startPolling() {
 
 /* ---------- PWA install button + bar ---------- */
 function renderInstall() {
-  // Always offered (the browser's own prompt when available, otherwise step-by-step help).
   $("#installBtn").classList.toggle("hidden", pwa.installed);
   renderInstallBar();
 }
@@ -308,7 +308,7 @@ async function init() {
   window.addEventListener("hashchange", navigate);
   navigate();
   startPolling();
-  if (getConfig().mode === "hybrid") refreshData(); // push anything queued while the app was closed
+  if (getConfig().mode === "hybrid") refreshData();
 }
 
 init();

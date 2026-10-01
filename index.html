@@ -18,7 +18,6 @@
     <link rel="stylesheet" href="css/styles.css" />
     <link rel="stylesheet" href="css/custom-select.css" />
     <script>
-      /* Apply the store's colours and the docked/undocked menu before anything is drawn (no flash). */
       (function () {
         try {
           var r = document.documentElement;
@@ -50,6 +49,7 @@
           <a href="#/inventory" data-route="inventory" title="Inventory"><span data-icon="package"></span><span class="txt">Inventory</span></a>
           <a href="#/labels" data-route="labels" title="Product Labels"><span data-icon="qr"></span><span class="txt">Product Labels</span></a>
           <a href="#/sales" data-route="sales" title="Invoices"><span data-icon="receipt"></span><span class="txt">Invoices</span></a>
+          <a href="#/customers" data-route="customers" title="Customers"><span data-icon="users"></span><span class="txt">Customers</span></a>
           <a href="#/settings" data-route="settings" title="Settings"><span data-icon="settings"></span><span class="txt">Settings</span></a>
         </nav>
 
@@ -96,8 +96,6 @@
     <div id="toastRoot"></div>
     <div id="printArea"></div>
 
-    <!-- Old browsers (Internet Explorer, Chrome < 98, Firefox < 94): explain instead of showing a blank page.
-         Deliberately written in old-style JavaScript so even IE can run it. -->
     <script>
       (function () {
         var s = document.createElement("script");
