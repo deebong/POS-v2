@@ -303,7 +303,7 @@ export async function loginStaff() {
         completed = true; m.close(); resolve(signed);
       } catch (e) {
         const message = e.message || "Sign-in failed.";
-        if (/^Invalid username or PIN\\.?$/.test(message) && getConfig().mode !== "local") {
+        if (/^Invalid username or PIN\.?$/.test(message) && getConfig().mode !== "local") {
           err.textContent = "Your local PIN is valid, but the Google Sheets staff credential is out of sync.";
           m.$("#loginRepair").style.display = "block";
           setTimeout(() => m.$("#loginSetupCode")?.focus(), 40);
