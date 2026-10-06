@@ -158,10 +158,18 @@ export async function createHybridAdapter(cfg) {
         }
         if (pull && !disposed) {
           const d = await remote.bootstrap({ days: HISTORY_DAYS, includeOps: true });
+          const incomingProducts = Array.isArray(d.products) ? d.products : [];
+          const incomingSales = Array.isArray(d.sales) ? d.sales : [];
+          // Never replace a populated local snapshot with an unexpectedly empty remote payload.
+          // A transient/partial Apps Script response must not make a working counter appear empty.
+          const hadData = Boolean((snapshot?.products || []).length || (snapshot?.sales || []).length);
+          if (hadData && !incomingProducts.length && !incomingSales.length) {
+            throw new Error("Google Sheets returned an empty dataset. Your saved counter data was kept; sync was not applied.");
+          }
           snapshot = {
-            products: d.products || [],
-            sales: d.sales || [],
-            saleItems: d.saleItems || [],
+            products: incomingProducts,
+            sales: incomingSales,
+            saleItems: Array.isArray(d.saleItems) ? d.saleItems : [],
             settings: d.settings || {},
             spreadsheetUrl: d.spreadsheetUrl || "",
             spreadsheetName: d.spreadsheetName || "",

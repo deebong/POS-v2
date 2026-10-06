@@ -222,7 +222,49 @@ export async function verifyStaffPin(user, pin) {
   return verifyPin(user, pin);
 }
 export async function refreshStaffSession() { await initStaff(); const s = await idb.get(SESSION_KEY).catch(() => null); if (!sessionValid(s)) { currentId = ""; await idb.del(SESSION_KEY).catch(() => {}); return null; } await touchSession(); return currentStaff(); }
-export async function logoutStaff() { currentId = ""; await idb.del(SESSION_KEY).catch(() => {}); window.dispatchEvent(new CustomEvent("staff:changed")); }
+export async function logoutStaff() {
+  const hadOnlineAuth = navigator.onLine && getConfig().mode !== "local";
+  if (hadOnlineAuth) {
+    try {
+      const { onlineLogout } = await import("./auth.js");
+      await onlineLogout();
+    } catch (e) {
+      toast("Signed out on this counter. Server session could not be closed: " + (e.message || e), "warn");
+    }
+  }
+  currentId = "";
+  await idb.del(SESSION_KEY).catch(() => {});
+  window.dispatchEvent(new CustomEvent("staff:changed"));
+  return true;
+}
+
+export async function openOperatorMenu() {
+  await initStaff();
+  const me = currentStaff();
+  if (!me) return loginStaff();
+  const m = openModal({
+    title: me.name,
+    sub: `${permissionLabel(me.role)} · Counter 1`,
+    size: "sm",
+    body: `<div class="choice-list"><button class="choice" data-op="switch">${icon("user")}<b>Switch operator</b><span>Sign in as another staff member.</span></button><button class="choice" data-op="logout"><span style="color:var(--red)">${icon("log-out")}</span><b>Logout</b><span>End this operator session on this counter.</span></button></div>`,
+    footer: `<button class="btn btn-outline" data-close>Cancel</button>`,
+  });
+  m.body.addEventListener("click", async (e) => {
+    const action = e.target.closest("[data-op]")?.dataset.op;
+    if (!action) return;
+    if (action === "switch") { m.close(); await switchOperator(); return; }
+    if (action === "logout") {
+      const ok = await confirmDialog({ title: "Logout?", message: `Sign out ${me.name} from this counter?`, confirmText: "Logout", danger: true });
+      if (!ok) return;
+      m.close();
+      await logoutStaff();
+      window.dispatchEvent(new CustomEvent("staff:changed"));
+      location.hash = "#/dashboard";
+      await loginStaff();
+      window.dispatchEvent(new CustomEvent("staff:changed"));
+    }
+  });
+}
 
 export async function loginStaff() {
   await initStaff();

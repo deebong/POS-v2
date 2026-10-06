@@ -73,7 +73,15 @@ export async function loadAll() {
   state.meta.syncing = true;
   emit("sync:status");
   try {
-    ingest(await backend.bootstrap({ days: HISTORY_DAYS }));
+    const incoming = await backend.bootstrap({ days: HISTORY_DAYS });
+    const hadData = Boolean(state.all.length || state.sales.length);
+    const incomingProducts = Array.isArray(incoming?.products) ? incoming.products : [];
+    const incomingSales = Array.isArray(incoming?.sales) ? incoming.sales : [];
+    const sameRemoteSource = Boolean(state.meta.spreadsheetUrl && incoming?.spreadsheetUrl && state.meta.spreadsheetUrl === incoming.spreadsheetUrl);
+    if (getConfig().mode !== "local" && sameRemoteSource && hadData && !incomingProducts.length && !incomingSales.length) {
+      throw new Error("Google Sheets returned an empty dataset. Your saved counter data was kept; sync was not applied.");
+    }
+    ingest(incoming);
   } catch (e) {
     state.meta.error = e.message || "Sync failed";
     throw e;

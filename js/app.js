@@ -18,7 +18,7 @@ import * as lowStock from "./low-stock.js";
 import * as reports from "./reports.js";
 import * as loyalty from "./loyalty.js";
 import * as staff from "./staff.js";
-import { initStaff, currentStaff, loginStaff, switchOperator, can, refreshStaffSession } from "./staff.js";
+import { initStaff, currentStaff, loginStaff, switchOperator, openOperatorMenu, can, refreshStaffSession } from "./staff.js";
 import { openScanner } from "./scanner.js";
 import * as settings from "./settings.js";
 import { findByCode, loadAll, refreshData, reloadLocal, state } from "./store.js";
@@ -249,7 +249,7 @@ async function init() {
   window.addEventListener("pos:synced", () => reloadLocal());
   window.addEventListener("pwa:status", renderInstall);
   $("#syncPill").addEventListener("click", onPillClick);
-  $("#cashierName")?.parentElement?.addEventListener("click", () => switchOperator());
+  $("#cashierName")?.closest(".cashier-card")?.addEventListener("click", () => openOperatorMenu());
   $("#installBtn").addEventListener("click", promptInstall);
   const dockButton = $("#dockTop");
   if (dockButton) dockButton.id = "dockBtn";
