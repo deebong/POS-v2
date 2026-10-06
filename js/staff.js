@@ -190,6 +190,11 @@ async function syncServerStaff(setupCode = "") {
   const { syncStaffToServer } = await import("./auth.js");
   return syncStaffToServer(users.map(safeUser), setupCode);
 }
+async function repairServerBootstrap(setupCode) {
+  const code = clean(setupCode, 80);
+  if (!code) throw new Error("Enter the one-time setup code.");
+  await syncServerStaff(code);
+}
 async function askPin(user, title = "Switch operator") {
   return new Promise(resolve => {
     const m = openModal({
@@ -272,7 +277,7 @@ export async function loginStaff() {
       title: "Staff sign in",
       sub: "Enter your POS username and PIN to continue.",
       size: "sm",
-      body: `<div class="field"><label for="loginUsername">Username</label><input class="input" id="loginUsername" autocomplete="username" maxlength="60" placeholder="Username"></div><div class="field" style="margin-top:12px"><label for="loginPin">PIN</label><input class="input" id="loginPin" type="password" inputmode="numeric" autocomplete="current-password" maxlength="12" placeholder="PIN"></div><div class="staff-pin-error" id="loginError"></div>`,
+      body: `<div class="field"><label for="loginUsername">Username</label><input class="input" id="loginUsername" autocomplete="username" maxlength="60" placeholder="Username"></div><div class="field" style="margin-top:12px"><label for="loginPin">PIN</label><input class="input" id="loginPin" type="password" inputmode="numeric" autocomplete="current-password" maxlength="12" placeholder="PIN"></div><div class="staff-pin-error" id="loginError"></div><div id="loginRepair" style="display:none;margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface-2)"><div class="muted" style="margin-bottom:8px">Your local PIN is valid, but the Google Sheets staff credential is out of sync. Run <b>getAuthSetupCode()</b> in Apps Script and paste the one-time code below.</div><div class="field"><label for="loginSetupCode">One-time setup code</label><input class="input" id="loginSetupCode" autocomplete="off" maxlength="32" placeholder="Setup code"></div><button class="btn btn-outline" id="loginRepairGo" style="width:100%;margin-top:8px">${icon("sync")} Repair server sign-in</button></div>`,
       footer: `<button class="btn btn-primary login-submit" id="loginGo">${icon("log-in")}<span>Sign in</span></button>`,
       onClose: () => { if (!completed) resolve(null); },
     });
@@ -289,8 +294,32 @@ export async function loginStaff() {
        }
        if (!user) { err.textContent = "Invalid username or PIN."; return; }
       const btn = m.$("#loginGo"); btn.disabled = true; err.textContent = "";
-      try { const signed = await signIn(user, pin); completed = true; m.close(); resolve(signed); }
-      catch (e) { err.textContent = e.message || "Sign-in failed."; btn.disabled = false; m.$("#loginPin").select(); }
+      try {
+        const signed = await signIn(user, pin);
+        completed = true; m.close(); resolve(signed);
+      } catch (e) {
+        const message = e.message || "Sign-in failed.";
+        if (/^Invalid username or PIN\\.?$/.test(message) && getConfig().mode !== "local") {
+          err.textContent = "Your local PIN is valid, but the Google Sheets staff credential is out of sync.";
+          m.$("#loginRepair").style.display = "block";
+          setTimeout(() => m.$("#loginSetupCode")?.focus(), 40);
+        } else {
+          err.textContent = message;
+        }
+        btn.disabled = false; m.$("#loginPin").select();
+      }
+    };
+    m.$("#loginRepairGo").onclick = async () => {
+      const b = m.$("#loginRepairGo"), code = m.$("#loginSetupCode").value.trim();
+      b.disabled = true; err.textContent = "";
+      try {
+        await repairServerBootstrap(code);
+        const signed = await signIn(user, pin);
+        completed = true; m.close(); resolve(signed);
+      } catch (e) {
+        err.textContent = e.message || "Server repair failed.";
+        b.disabled = false;
+      }
     };
     m.$("#loginGo").onclick = submit;
     m.$("#loginPin").addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
