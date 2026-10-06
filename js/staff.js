@@ -281,8 +281,13 @@ export async function loginStaff() {
       const pin = m.$("#loginPin").value.trim();
       const err = m.$("#loginError");
       if (!username || !pin) { err.textContent = "Enter username and PIN."; return; }
-      const user = users.find((u) => u.username === username);
-      if (!user) { err.textContent = "Invalid username or PIN."; return; }
+       let user = users.find((u) => u.username === username);
+       // Legacy bootstrap recovery: accept only the exact single default-admin identity.
+       if (!user && username === "admin") {
+         const bootstrapAdmins = users.filter((u) => u.active && u.role === "admin" && u.name === "Anand Ibrahim");
+         if (bootstrapAdmins.length === 1 && users.length === 1) user = bootstrapAdmins[0];
+       }
+       if (!user) { err.textContent = "Invalid username or PIN."; return; }
       const btn = m.$("#loginGo"); btn.disabled = true; err.textContent = "";
       try { const signed = await signIn(user, pin); completed = true; m.close(); resolve(signed); }
       catch (e) { err.textContent = e.message || "Sign-in failed."; btn.disabled = false; m.$("#loginPin").select(); }
