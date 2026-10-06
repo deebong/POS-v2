@@ -18,7 +18,7 @@ import * as lowStock from "./low-stock.js";
 import * as reports from "./reports.js";
 import * as loyalty from "./loyalty.js";
 import * as staff from "./staff.js";
-import { initStaff, currentStaff, switchOperator, can } from "./staff.js";
+import { initStaff, currentStaff, loginStaff, switchOperator, can, refreshStaffSession } from "./staff.js";
 import { openScanner } from "./scanner.js";
 import * as settings from "./settings.js";
 import { findByCode, loadAll, refreshData, reloadLocal, state } from "./store.js";
@@ -235,11 +235,13 @@ async function init() {
   hydrateIcons(document);
   await initStaff();
   renderOperator();
+  if (!currentStaff()) { await loginStaff(); renderOperator(); }
   $("#brandLogo").innerHTML = icon("bag");
   initPwa();
   await singleWindowGuard();
   tickClock();
   setInterval(tickClock, 20000);
+  setInterval(async () => { const u = await refreshStaffSession(); if (!u) { renderOperator(); location.hash = "#/dashboard"; await loginStaff(); renderOperator(); } }, 60000);
   window.addEventListener("sync:status", renderSync);
   window.addEventListener("data:changed", applyDataChange);
   window.addEventListener("settings:changed", applyBrand);

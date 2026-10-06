@@ -32,7 +32,7 @@
 
 var API_KEY = ''; // optional shared secret, e.g. 'my-store-key-123'
 var SPREADSHEET_ID = ''; // leave empty when the script is opened from the sheet (Extensions ▸ Apps Script)
-var VERSION = '1.2.0';
+var VERSION = '1.3.0';
 var MAX_CART_LINES = 150;
 
 // Column schema: [name, type]  n = number, s = text, b = true/false, d = date-time
@@ -48,6 +48,9 @@ var SCHEMA = {
   StockMovements: [['id', 'n'], ['createdAt', 'd'], ['productId', 'n'], ['sku', 's'], ['name', 's'], ['change', 'n'],
     ['reason', 's'], ['reference', 's']],
   Settings: [['key', 's'], ['value', 's']],
+  Staff: [['id', 's'], ['name', 's'], ['username', 's'], ['phone', 's'], ['role', 's'], ['active', 'b'], ['pinSalt', 's'], ['pinHash', 's'], ['pinIterations', 'n'], ['mustChangePin', 'b'], ['createdAt', 'd'], ['updatedAt', 'd'], ['lastLoginAt', 'd'], ['failedAttempts', 'n'], ['lockedUntil', 'd']],
+  AuthSessions: [['tokenHash', 's'], ['staffId', 's'], ['createdAt', 'd'], ['expiresAt', 'd'], ['lastSeenAt', 'd'], ['deviceId', 's'], ['revoked', 'b']],
+  AuditLog: [['id', 's'], ['at', 'd'], ['actorId', 's'], ['actorName', 's'], ['role', 's'], ['deviceId', 's'], ['action', 's'], ['module', 's'], ['detail', 's'], ['entity', 's'], ['level', 's'], ['prevHash', 's'], ['hash', 's']],
   SyncLog: [['opId', 's'], ['appliedAt', 'd'], ['deviceId', 's'], ['type', 's'], ['ok', 'b'], ['message', 's']]
 };
 var SETTING_KEYS = ['storeName', 'address', 'phone', 'taxId', 'currency', 'taxLabel', 'upiId', 'receiptFooter',
@@ -68,7 +71,9 @@ function doPost(e) {
     if (API_KEY && req.key !== API_KEY) throw new Error('Invalid access key');
     var handler = ACTIONS[req.action];
     if (!handler) throw new Error('Unknown action: ' + req.action);
+    var actor = requireActionAuth_(req);
     out = handler(req);
+    if (actor) out.actor = { id: actor.id, name: actor.name, username: actor.username, role: actor.role };
     out.ok = true;
   } catch (err) {
     out = { ok: false, error: String((err && err.message) || err) };
@@ -83,6 +88,12 @@ function json_(obj) {
 var ACTIONS = {
   ping: ping_,
   bootstrap: bootstrap_,
+  authChallenge: authChallenge_,
+  authLogin: authLogin_,
+  authLogout: authLogout_,
+  authSyncStaff: authSyncStaff_,
+  authStatus: authStatus_,
+  auditAppend: auditAppend_,
   saveProduct: function (r) { return withLock_(function () { return saveProduct_(r); }); },
   deleteProduct: function (r) { return withLock_(function () { return deleteProduct_(r); }); },
   adjustStock: function (r) { return withLock_(function () { return adjustStock_(r); }); },
@@ -94,9 +105,176 @@ var ACTIONS = {
   syncBatch: function (r) { return withLock_(function () { return syncBatch_(r); }); },
   importBulk: function (r) { return withLock_(function () { return importBulk_(r); }); },
   uploadImage: uploadImage_,
+  backupStatus: backupStatus_,
+  backupSetup: backupSetup_,
+  backupNow: backupNow_,
+  backupVerify: backupVerify_,
+  backupRestore: backupRestore_,
   procurementBootstrap: procurementBootstrap_,
   procurementSync: function (r) { return withLock_(function () { return procurementSync_(r); }); }
 };
+
+/* ------------------------------------------------------------------ */
+/* Staff authentication and server-side authorization                  */
+/* ------------------------------------------------------------------ */
+var AUTH_SESSION_MS = 12 * 60 * 60 * 1000;
+var AUTH_IDLE_MS = 30 * 60 * 1000;
+var AUTH_MAX_FAILED = 5;
+var AUTH_LOCK_MS = 15 * 60 * 1000;
+
+function authNow_() { return new Date(); }
+function authHex_(bytes) {
+  return bytes.map(function (b) { var n = b < 0 ? b + 256 : b; return ('0' + n.toString(16)).slice(-2); }).join('');
+}
+function authSha_(value) { return authHex_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(value), Utilities.Charset.UTF_8)); }
+function authSetupCode_() {
+  var props = PropertiesService.getScriptProperties();
+  var code = props.getProperty('AUTH_SETUP_CODE');
+  if (!code) { code = Utilities.getUuid().replace(/-/g, '').slice(0, 16).toUpperCase(); props.setProperty('AUTH_SETUP_CODE', code); }
+  return code;
+}
+// Run once in the Apps Script editor during production setup. The returned code is the one-time
+// bootstrap secret used by the POS Staff page to provision the existing local staff accounts.
+function getAuthSetupCode() { return authSetupCode_(); }
+
+function staffRows_() { ensureAll_(); return readTable_('Staff'); }
+function authSession_(token) {
+  if (!token) return null;
+  var hash = authSha_(token), rows = readTable_('AuthSessions'), now = Date.now(), found = null;
+  rows.forEach(function (r) {
+    if (r.tokenHash === hash && !r.revoked) {
+      var exp = new Date(r.expiresAt || 0).getTime(), idle = new Date(r.lastSeenAt || r.createdAt || 0).getTime();
+      if (exp > now && now - idle < AUTH_IDLE_MS) found = r;
+    }
+  });
+  if (!found) return null;
+  var users = staffRows_(), user = users.find(function (u) { return u.id === found.staffId && u.active; });
+  if (!user) return null;
+  found.lastSeenAt = authNow_().toISOString();
+  writeRow_('AuthSessions', found._row, found);
+  return user;
+}
+
+function authRequireRole_(req, minRole) {
+  var roleRank = { cashier: 1, manager: 2, admin: 3 };
+  var user = authSession_(String(req.authToken || ''));
+  if (!user) throw new Error('Authentication required or session expired. Sign in again.');
+  if ((roleRank[user.role] || 0) < (roleRank[minRole] || 99)) throw new Error('This action requires ' + minRole + ' access.');
+  return user;
+}
+
+function requireActionAuth_(req) {
+  if (PropertiesService.getScriptProperties().getProperty('AUTH_ENFORCED') !== 'true') return null;
+  var action = String(req.action || '');
+  var roles = {
+    saveProduct: 'manager', deleteProduct: 'manager', adjustStock: 'manager', importProducts: 'manager',
+    checkout: 'cashier', voidSale: 'manager', saveSettings: 'admin', importBulk: 'manager',
+    uploadImage: 'manager', backupSetup: 'admin', backupNow: 'admin', backupVerify: 'admin',
+    procurementSync: 'manager'
+  };
+  if (action === 'auditAppend') return authRequireRole_(req, 'cashier');
+  if (action === 'authDevices' || action === 'authRevokeDevice') return authRequireRole_(req, 'admin');
+  if (action === 'syncBatch') {
+    var ops = Array.isArray(req.ops) ? req.ops : [];
+    var sensitive = ops.some(function (op) { return /^(product\.|stock\.|settings\.|procurement\.)/.test(String(op && op.type || '')); });
+    return authRequireRole_(req, sensitive ? 'manager' : 'cashier');
+  }
+  if (roles[action]) return authRequireRole_(req, roles[action]);
+  return null;
+}
+
+function authChallenge_(req) {
+  var username = str_(req.username, 60).toLowerCase();
+  var user = staffRows_().find(function (u) { return u.username.toLowerCase() === username; });
+  if (!user || !user.active) throw new Error('Invalid username or PIN.');
+  if (user.lockedUntil && new Date(user.lockedUntil).getTime() > Date.now()) throw new Error('This account is temporarily locked. Try again later.');
+  var nonce = Utilities.getUuid() + Utilities.getUuid();
+  return { staffId: user.id, username: user.username, name: user.name, role: user.role, pinSalt: user.pinSalt, pinIterations: Number(user.pinIterations) || 120000, nonce: nonce };
+}
+
+function authDeviceKey_(deviceId) { return 'AUTH_REVOKED_DEVICE_' + authSha_(str_(deviceId, 120)); }
+
+function authDevices_() {
+  var rows = readTable_('AuthSessions'), users = staffRows_(), byId = {};
+  users.forEach(function (u) { byId[u.id] = u; });
+  var seen = {};
+  rows.forEach(function (r) {
+    if (!r.deviceId || seen[r.deviceId]) return;
+    seen[r.deviceId] = { deviceId: r.deviceId, staffId: r.staffId, staffName: byId[r.staffId] ? byId[r.staffId].name : '', lastSeenAt: r.lastSeenAt, revoked: !!r.revoked || PropertiesService.getScriptProperties().getProperty(authDeviceKey_(r.deviceId)) === 'true' };
+  });
+  return { devices: Object.keys(seen).map(function (k) { return seen[k]; }) };
+}
+
+function authRevokeDevice_(req) {
+  var deviceId = str_(req.deviceId, 120);
+  if (!deviceId) throw new Error('Device ID is required.');
+  PropertiesService.getScriptProperties().setProperty(authDeviceKey_(deviceId), 'true');
+  readTable_('AuthSessions').forEach(function (r) {
+    if (r.deviceId === deviceId && !r.revoked) { r.revoked = true; writeRow_('AuthSessions', r._row, r); }
+  });
+  return { deviceId: deviceId, revoked: true };
+}
+
+function authLogin_(req) {
+  var rows = staffRows_(), username = str_(req.username, 60).toLowerCase();
+  var user = rows.find(function (u) { return u.username.toLowerCase() === username; });
+  if (!user || !user.active) throw new Error('Invalid username or PIN.');
+  if (PropertiesService.getScriptProperties().getProperty(authDeviceKey_(str_(req.deviceId, 120))) === 'true') throw new Error('This device has been revoked. Contact an administrator.');
+  if (user.lockedUntil && new Date(user.lockedUntil).getTime() > Date.now()) throw new Error('This account is temporarily locked. Try again later.');
+  var expected = authSha_(String(user.pinHash) + ':' + String(req.nonce || ''));
+  if (!req.response || expected !== String(req.response)) {
+    user.failedAttempts = Number(user.failedAttempts) + 1;
+    if (user.failedAttempts >= AUTH_MAX_FAILED) { user.lockedUntil = new Date(Date.now() + AUTH_LOCK_MS).toISOString(); user.failedAttempts = 0; }
+    writeRow_('Staff', user._row, user);
+    throw new Error('Invalid username or PIN.');
+  }
+  user.failedAttempts = 0; user.lockedUntil = null; user.lastLoginAt = authNow_().toISOString(); user.updatedAt = authNow_().toISOString();
+  writeRow_('Staff', user._row, user);
+  var token = Utilities.getUuid() + Utilities.getUuid() + Utilities.getUuid();
+  var session = { tokenHash: authSha_(token), staffId: user.id, createdAt: authNow_().toISOString(), expiresAt: new Date(Date.now() + AUTH_SESSION_MS).toISOString(), lastSeenAt: authNow_().toISOString(), deviceId: str_(req.deviceId, 120), revoked: false };
+  appendRows_('AuthSessions', [session]);
+  return { token: token, expiresAt: session.expiresAt, staff: { id: user.id, name: user.name, username: user.username, role: user.role, mustChangePin: !!user.mustChangePin } };
+}
+
+function authLogout_(req) {
+  var tokenHash = authSha_(String(req.authToken || '')), rows = readTable_('AuthSessions');
+  rows.forEach(function (r) { if (r.tokenHash === tokenHash) { r.revoked = true; writeRow_('AuthSessions', r._row, r); } });
+  return { loggedOut: true };
+}
+
+function authSyncStaff_(req) {
+  var rows = staffRows_(), incoming = Array.isArray(req.users) ? req.users.slice(0, 100) : [];
+  if (!incoming.length) throw new Error('No staff accounts supplied.');
+  if (!rows.length) {
+    if (String(req.setupCode || '') !== authSetupCode_()) throw new Error('Server authentication is not initialized. Enter the one-time setup code generated by getAuthSetupCode().');
+  } else {
+    authRequireRole_(req, 'admin');
+  }
+  var byId = {}, byUser = {};
+  rows.forEach(function (r) { byId[r.id] = r; byUser[r.username.toLowerCase()] = r; });
+  var now = authNow_().toISOString();
+  incoming.forEach(function (u) {
+    if (!u.id || !u.username || !u.pinHash || !u.pinSalt) throw new Error('Each staff account must include its salted PIN verifier.');
+    var existing = byId[u.id] || byUser[String(u.username).toLowerCase()];
+    var data = {
+      id: String(u.id), name: str_(u.name, 80), username: str_(u.username, 60).toLowerCase(), phone: str_(u.phone, 30),
+      role: ['admin','manager','cashier'].indexOf(u.role) >= 0 ? u.role : 'cashier', active: u.active !== false,
+      pinSalt: str_(u.pinSalt, 200), pinHash: str_(u.pinHash, 200), pinIterations: Number(u.pinIterations) || 120000,
+      mustChangePin: !!u.mustChangePin, createdAt: existing ? existing.createdAt : now, updatedAt: now,
+      lastLoginAt: existing ? existing.lastLoginAt : null, failedAttempts: existing ? Number(existing.failedAttempts) || 0 : 0, lockedUntil: existing ? existing.lockedUntil : null
+    };
+    if (existing && existing.id !== data.id) throw new Error('Username is already assigned to another staff account.');
+    if (existing) writeRow_('Staff', existing._row, data); else appendRows_('Staff', [data]);
+  });
+  PropertiesService.getScriptProperties().setProperty('AUTH_ENFORCED', 'true');
+  return { count: incoming.length, staff: staffRows_().map(function (u) { return { id: u.id, name: u.name, username: u.username, role: u.role, active: u.active, mustChangePin: u.mustChangePin }; }) };
+}
+
+function authStatus_() {
+  var rows = staffRows_();
+  return { initialized: rows.length > 0, staffCount: rows.length, setupRequired: rows.length === 0 };
+}
+
 
 // Serialise writes so two counters can never sell the same last item.
 function withLock_(fn) {
@@ -198,7 +376,7 @@ function readTable_(name) {
   var out = [];
   for (var i = 0; i < values.length; i++) {
     var o = rowToObj_(cols, values[i], i + 2);
-    if (!hasId || o.id > 0) out.push(o);
+    if (!hasId || (cols[0][1] === 'n' ? o.id > 0 : !!o.id)) out.push(o);
   }
   return out;
 }
@@ -371,7 +549,7 @@ function settingsMap_() {
 function ping_() {
   ensureAll_();
   var ss = ss_();
-  return { spreadsheetName: ss.getName(), spreadsheetUrl: ss.getUrl(), version: VERSION, features: ['sync', 'bulk', 'images'] };
+  return { spreadsheetName: ss.getName(), spreadsheetUrl: ss.getUrl(), version: VERSION, features: ['sync', 'bulk', 'images', 'backups'] };
 }
 
 function bootstrap_(req) {
@@ -665,7 +843,7 @@ function syncBatch_(req) {
     }
     var res;
     try {
-      res = applyOp_(op) || {};
+      res = applyOp_(op, req) || {};
       res.ok = true;
     } catch (e) {
       res = { ok: false, error: String((e && e.message) || e) };
@@ -681,7 +859,7 @@ function syncBatch_(req) {
   return { results: results };
 }
 
-function applyOp_(op) {
+function applyOp_(op, req) {
   var p = op.payload || {};
   switch (op.type) {
     case 'sale': return recordSale_(p, op.opId);
@@ -693,6 +871,7 @@ function applyOp_(op) {
       var r = importProducts_({ products: p.products || [] });
       return r.skipped ? { warning: r.skipped + ' product(s) skipped — SKU already on the sheet' } : {};
     case 'settings': saveSettings_({ settings: p.settings || {} }); return {};
+    case 'audit': return auditAppend_({ event: p.event || {}, authToken: req.authToken, deviceId: op.deviceId });
     default: throw new Error('Unknown operation: ' + op.type);
   }
 }
@@ -941,6 +1120,255 @@ function authorize() {
   ss_().getName();
   return 'Authorised';
 }
+
+
+/* ------------------------------------------------------------------ */
+/* Disaster recovery backups                                           */
+/* ------------------------------------------------------------------ */
+var BACKUP_ROOT = 'FreshMart POS Backups';
+var BACKUP_RETENTION = { daily: 30, weekly: 12, monthly: 12, manual: 10 };
+
+function backupProps_() { return PropertiesService.getScriptProperties(); }
+
+function backupRoot_() {
+  var props = backupProps_();
+  var id = props.getProperty('BACKUP_FOLDER_ID');
+  if (id) {
+    try { return DriveApp.getFolderById(id); } catch (e) { /* recreate */ }
+  }
+  var folder = DriveApp.createFolder(BACKUP_ROOT);
+  props.setProperty('BACKUP_FOLDER_ID', folder.getId());
+  return folder;
+}
+
+function backupSubfolder_(name) {
+  var root = backupRoot_();
+  var it = root.getFoldersByName(name);
+  return it.hasNext() ? it.next() : root.createFolder(name);
+}
+
+function backupData_() {
+  ensureAll_();
+  var out = {
+    app: 'freshmart-pos',
+    format: 1,
+    generatedAt: new Date().toISOString(),
+    spreadsheet: { id: ss_().getId(), name: ss_().getName(), url: ss_().getUrl() },
+    tables: {}
+  };
+  Object.keys(SCHEMA).forEach(function (name) { if (name !== 'AuthSessions') out.tables[name] = readTable_(name); });
+  try {
+    out.tables.Suppliers = procurementRead_('Suppliers');
+    out.tables.Purchases = procurementRead_('Purchases');
+    out.tables.PurchaseItems = procurementRead_('PurchaseItems');
+    out.tables.ProcurementSyncLog = procurementRead_('ProcurementSyncLog');
+  } catch (e) {
+    // Procurement sheets are optional; core backup must still succeed.
+  }
+  return out;
+}
+
+function backupHash_(text) {
+  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, text, Utilities.Charset.UTF_8);
+  return bytes.map(function (b) {
+    var n = b < 0 ? b + 256 : b;
+    return ('0' + n.toString(16)).slice(-2);
+  }).join('');
+}
+
+function backupWriteJson_(kind) {
+  var data = backupData_();
+  var canonical = JSON.stringify(data);
+  var payload = {
+    app: 'freshmart-pos-backup',
+    format: 1,
+    kind: kind,
+    generatedAt: new Date().toISOString(),
+    sha256: backupHash_(canonical),
+    bytes: canonical.length,
+    counts: {
+      products: (data.tables.Products || []).length,
+      sales: (data.tables.Sales || []).length,
+      saleItems: (data.tables.SaleItems || []).length,
+      stockMovements: (data.tables.StockMovements || []).length,
+      settings: (data.tables.Settings || []).length
+    },
+    data: data
+  };
+  var folder = backupSubfolder_(kind);
+  var stamp = Utilities.formatDate(new Date(), tz_(), kind === 'monthly' ? 'yyyy-MM' : 'yyyy-MM-dd');
+  var prefix = kind === 'weekly' ? 'FreshMart-POS-W-' : kind === 'monthly' ? 'FreshMart-POS-M-' : 'FreshMart-POS-';
+  if (kind === 'manual') prefix = 'FreshMart-POS-manual-';
+  var name = prefix + stamp + '-' + new Date().getTime() + '.json';
+  var file = folder.createFile(name, JSON.stringify(payload, null, 2), MimeType.PLAIN_TEXT);
+  return { fileId: file.getId(), name: name, url: file.getUrl(), sha256: payload.sha256, counts: payload.counts, generatedAt: payload.generatedAt };
+}
+
+function backupSpreadsheetCopy_(kind) {
+  var folder = backupSubfolder_(kind);
+  var stamp = Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd');
+  var copy = DriveApp.getFileById(ss_().getId()).makeCopy('FreshMart POS - ' + kind + ' - ' + stamp, folder);
+  return { fileId: copy.getId(), name: copy.getName(), url: copy.getUrl() };
+}
+
+function backupPrune_(kind) {
+  var keep = BACKUP_RETENTION[kind] || 10;
+  var folder = backupSubfolder_(kind);
+  var files = [];
+  var it = folder.getFiles();
+  while (it.hasNext()) {
+    var file = it.next();
+    files.push({ file: file, created: file.getDateCreated().getTime() });
+  }
+  files.sort(function (a, b) { return b.created - a.created; });
+  files.slice(keep).forEach(function (x) { try { x.file.setTrashed(true); } catch (e) {} });
+}
+
+function backupRun_(kind) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try {
+    var json = backupWriteJson_(kind);
+    var sheetCopy = backupSpreadsheetCopy_(kind);
+    backupPrune_(kind);
+    var props = backupProps_();
+    props.setProperty('BACKUP_LAST_AT', json.generatedAt);
+    props.setProperty('BACKUP_LAST_OK', 'true');
+    props.deleteProperty('BACKUP_LAST_ERROR');
+    props.setProperty('BACKUP_LAST_KIND', kind);
+    props.setProperty('BACKUP_LAST_JSON_ID', json.fileId);
+    props.setProperty('BACKUP_LAST_SHEET_ID', sheetCopy.fileId);
+    return { ok: true, kind: kind, json: json, sheet: sheetCopy, message: 'Google Drive backup created successfully.' };
+  } catch (e) {
+    backupProps_().setProperty('BACKUP_LAST_OK', 'false');
+    backupProps_().setProperty('BACKUP_LAST_ERROR', String(e && e.message || e));
+    throw e;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function freshmartDailyBackup_() { backupRun_('daily'); }
+function freshmartWeeklyBackup_() { backupRun_('weekly'); }
+function freshmartMonthlyBackup_() { backupRun_('monthly'); }
+
+function backupSetup_() {
+  var props = backupProps_();
+  var root = backupRoot_();
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    var fn = t.getHandlerFunction();
+    if (fn === 'freshmartDailyBackup_' || fn === 'freshmartWeeklyBackup_' || fn === 'freshmartMonthlyBackup_') ScriptApp.deleteTrigger(t);
+  });
+  var hour = 2;
+  ScriptApp.newTrigger('freshmartDailyBackup_').timeBased().atHour(hour).everyDays(1).create();
+  ScriptApp.newTrigger('freshmartWeeklyBackup_').timeBased().atHour(hour).everyWeeks(1).onWeekDay(ScriptApp.WeekDay.MONDAY).create();
+  ScriptApp.newTrigger('freshmartMonthlyBackup_').timeBased().atHour(hour).onMonthDay(1).create();
+  props.setProperty('BACKUP_CONFIGURED', 'true');
+  props.setProperty('BACKUP_FOLDER_ID', root.getId());
+  return { configured: true, folderUrl: root.getUrl(), message: 'Automatic daily, weekly and monthly Google Drive backups are enabled.' };
+}
+
+function backupStatus_() {
+  var props = backupProps_();
+  var configured = props.getProperty('BACKUP_CONFIGURED') === 'true';
+  var folderUrl = '';
+  var id = props.getProperty('BACKUP_FOLDER_ID');
+  if (id) {
+    try { folderUrl = DriveApp.getFolderById(id).getUrl(); } catch (e) {}
+  }
+  return {
+    configured: configured,
+    folderUrl: folderUrl,
+    lastBackupAt: props.getProperty('BACKUP_LAST_AT') || null,
+    lastBackupOk: props.getProperty('BACKUP_LAST_OK') === 'true' ? true : props.getProperty('BACKUP_LAST_OK') === 'false' ? false : null,
+    lastBackupError: props.getProperty('BACKUP_LAST_ERROR') || '',
+    lastBackupKind: props.getProperty('BACKUP_LAST_KIND') || '',
+    retention: BACKUP_RETENTION
+  };
+}
+
+function backupNow_(req) {
+  return backupRun_(str_(req && req.kind, 20) || 'manual');
+}
+
+function backupVerify_() {
+  var props = backupProps_();
+  var id = props.getProperty('BACKUP_LAST_JSON_ID');
+  if (!id) return { ok: false, message: 'No Google Drive backup has been created yet.' };
+  try {
+    var file = DriveApp.getFileById(id);
+    var payload = JSON.parse(file.getBlob().getDataAsString());
+    if (payload.app !== 'freshmart-pos-backup' || !payload.data) throw new Error('Backup format is invalid.');
+    var canonical = JSON.stringify(payload.data);
+    var actual = backupHash_(canonical);
+    var ok = actual === payload.sha256;
+    if (!ok) throw new Error('Backup checksum does not match.');
+    var counts = payload.counts || {};
+    var actualCounts = {
+      products: (payload.data.tables.Products || []).length,
+      sales: (payload.data.tables.Sales || []).length,
+      saleItems: (payload.data.tables.SaleItems || []).length,
+      stockMovements: (payload.data.tables.StockMovements || []).length,
+      settings: (payload.data.tables.Settings || []).length
+    };
+    Object.keys(actualCounts).forEach(function (k) { if (Number(counts[k]) !== actualCounts[k]) throw new Error('Backup record count mismatch for ' + k + '.'); });
+    props.setProperty('BACKUP_LAST_OK', 'true');
+    props.deleteProperty('BACKUP_LAST_ERROR');
+    return { ok: true, message: 'Latest Google Drive JSON backup passed checksum and record-count verification.', generatedAt: payload.generatedAt, counts: actualCounts, fileUrl: file.getUrl() };
+  } catch (e) {
+    props.setProperty('BACKUP_LAST_OK', 'false');
+    props.setProperty('BACKUP_LAST_ERROR', String(e && e.message || e));
+    return { ok: false, message: String(e && e.message || e) };
+  }
+}
+
+function auditHash_(value) {
+  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(value), Utilities.Charset.UTF_8);
+  return bytes.map(function (b) { var n = b < 0 ? b + 256 : b; return ('0' + n.toString(16)).slice(-2); }).join('');
+}
+
+function auditAppend_(req) {
+  var actor = authSession_(String(req.authToken || ''));
+  if (!actor) throw new Error('Authentication required or session expired. Sign in again.');
+  var e = req.event || {};
+  var rows = readTable_('AuditLog');
+  var prev = rows.length ? String(rows[rows.length - 1].hash || '') : 'GENESIS';
+  var item = {
+    id: str_(e.id, 80) || Utilities.getUuid(), at: new Date().toISOString(),
+    actorId: actor.id, actorName: actor.name, role: actor.role, deviceId: str_(req.deviceId, 120),
+    action: str_(e.action, 120), module: str_(e.module, 80), detail: str_(e.detail, 500), entity: str_(e.entity, 120),
+    level: str_(e.level, 20) || 'info', prevHash: prev
+  };
+  if (!item.action) throw new Error('Audit action is required.');
+  item.hash = auditHash_([item.id,item.at,item.actorId,item.actorName,item.role,item.deviceId,item.action,item.module,item.detail,item.entity,item.level,item.prevHash].join('\\n'));
+  appendRows_('AuditLog', [item]);
+  return { auditId: item.id, hash: item.hash };
+}
+
+function backupRestore_(req) {
+  var fileId = str_(req && req.fileId, 120);
+  if (!fileId) throw new Error('Choose a backup file first.');
+  // Always take a pre-operation snapshot before changing live data.
+  var pre = backupRun_('manual');
+  var file = DriveApp.getFileById(fileId);
+  var payload = JSON.parse(file.getBlob().getDataAsString());
+  if (payload.app !== 'freshmart-pos-backup' || !payload.data || !payload.sha256) throw new Error('Invalid FreshMart POS backup.');
+  var canonical = JSON.stringify(payload.data);
+  if (auditHash_(canonical) !== payload.sha256) throw new Error('Backup checksum does not match; restore aborted.');
+  var tables = payload.data.tables || {};
+  readTable_('AuthSessions').forEach(function (r) { if (!r.revoked) { r.revoked = true; writeRow_('AuthSessions', r._row, r); } });
+  var restored = 0;
+  Object.keys(SCHEMA).forEach(function (name) {
+    if (name === 'AuthSessions' || name === 'SyncLog') return;
+    var rows = Array.isArray(tables[name]) ? tables[name].map(function (r) { var o = {}; SCHEMA[name].forEach(function (col) { o[col[0]] = r[col[0]]; }); return o; }) : [];
+    var sh = sheet_(name), last = sh.getLastRow();
+    if (last > 1) sh.getRange(2, 1, last - 1, SCHEMA[name].length).clearContent();
+    if (rows.length) { appendRows_(name, rows); restored += rows.length; }
+  });
+  SpreadsheetApp.flush();
+  return { ok: true, restoredRows: restored, preRestoreBackup: pre.json, message: 'Restore completed. All active sessions were invalidated.' };
+}
+
 
 
 var PROCUREMENT_VERSION = '1.0.0';

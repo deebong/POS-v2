@@ -1,5 +1,6 @@
 // Invoices / sales history + invoice modal (shared with POS)
 import { receiptHtml } from "./receipt.js";
+import { requestApproval } from "./approval.js";
 import { HISTORY_DAYS, lookupInvoice, state, voidSale } from "./store.js";
 import {
   $, confirmDialog, debounce, esc, fmtDateTime, hydrateIcons, icon, methodBadge, money, num, openModal, printHtml, toast,
@@ -45,6 +46,7 @@ export function showInvoiceModal(sale, items, { success = false, onNewSale, onCh
       if (!ok) return;
       v.disabled = true;
       try {
+        await requestApproval({ action: "Void invoice", minRole: "manager", detail: `${sale.invoiceNo} · ${money(sale.total)}` });
         const res = await voidSale(sale.id);
         toast("Invoice voided and stock restored");
         modal.close();

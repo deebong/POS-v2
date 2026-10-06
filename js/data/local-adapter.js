@@ -63,6 +63,7 @@ export async function createLocalAdapter() {
     importBulk: run(engine.importBulk),
     // No cloud in this mode: the (already resized) photo is stored with the product on this PC.
     uploadImage: async ({ dataUrl }) => ({ url: dataUrl, local: true }),
+    auditAppend: async ({ event }) => ({ local: true, event }),
     status: () => ({ mode: "local", online: navigator.onLine, pending: 0 }),
     exportData: async () => ({ app: "freshmart-pos", format: 1, mode: "local", exportedAt: new Date().toISOString(), local: db }),
     async importData(data) {

@@ -3,6 +3,7 @@
 import { idb } from "./data/idb.js";
 import { $, esc, hydrateIcons, icon, money, toast } from "./ui.js";
 import { currentStaff } from "./staff.js";
+import { backend, getConfig } from "./data/backend.js";
 
 const KEY = "audit.log.v1";
 const MAX_RECORDS = 1000;
@@ -16,6 +17,8 @@ let actionFilter = "all";
 const now = () => new Date().toISOString();
 const fmt = (iso) => iso ? new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—";
 const escCsv = (v) => `"${String(v ?? "").replaceAll('"', '""')}"`;
+const textHash = async (value) => { const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2,"0")).join(""); };
+const canonical = (r) => [r.id,r.at,r.actor,r.counter,r.action,r.module,r.detail,r.entity,r.level,r.prevHash || ""].join("\n");
 
 export async function recordAudit({ action, module = "System", detail = "", entity = "", level = "info" } = {}) {
   if (!action) return;
@@ -32,7 +35,7 @@ export async function recordAudit({ action, module = "System", detail = "", enti
   };
   records.unshift(item);
   records = records.slice(0, MAX_RECORDS);
-  try { await idb.set(KEY, { records }); } catch { /* Audit logging must never block POS actions. */ }
+  try { void idb.set(KEY, { records }).catch(() => {}); } catch { /* Audit logging must never block POS actions. */ }
   window.dispatchEvent(new CustomEvent("audit:changed"));
   return item;
 }

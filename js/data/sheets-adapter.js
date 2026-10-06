@@ -18,7 +18,7 @@ export function createSheetsAdapter({ url, key }) {
         const res = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "text/plain;charset=utf-8", Accept: "application/json,text/plain,*/*" },
-          body: JSON.stringify({ action, ...(key ? { key } : {}), ...payload }),
+          body: JSON.stringify({ action, ...(key ? { key } : {}), ...(sessionStorage.getItem("freshmart.auth.token") ? { authToken: sessionStorage.getItem("freshmart.auth.token") } : {}), ...payload }),
           redirect: "follow",
           cache: "no-store",
           signal: ctrl.signal,
@@ -65,6 +65,13 @@ export function createSheetsAdapter({ url, key }) {
   return {
     kind: "sheets",
     ping: () => call("ping"),
+    authChallenge: (arg) => call("authChallenge", arg),
+    authLogin: (arg) => call("authLogin", arg),
+    authLogout: () => call("authLogout"),
+    authSyncStaff: (arg) => call("authSyncStaff", arg),
+    authStatus: () => call("authStatus"),
+    authDevices: () => call("authDevices"),
+    authRevokeDevice: (arg) => call("authRevokeDevice", arg),
     bootstrap: (opts) => call("bootstrap", opts || {}),
     saveProduct: (arg) => call("saveProduct", arg),
     deleteProduct: (arg) => call("deleteProduct", arg),
@@ -77,6 +84,12 @@ export function createSheetsAdapter({ url, key }) {
     syncBatch: (arg) => call("syncBatch", arg, { timeoutMs: 180000 }),
     importBulk: (arg) => call("importBulk", arg, { timeoutMs: 280000 }),
     uploadImage: (arg) => call("uploadImage", arg, { timeoutMs: 120000 }),
+    backupStatus: () => call("backupStatus"),
+    backupSetup: (arg) => call("backupSetup", arg),
+    backupNow: (arg) => call("backupNow", arg, { timeoutMs: 180000 }),
+    backupVerify: () => call("backupVerify"),
+    backupRestore: (arg) => call("backupRestore", arg, { timeoutMs: 180000 }),
+    auditAppend: (arg) => call("auditAppend", arg),
     status: () => ({ mode: "sheets", online: navigator.onLine, pending: 0 }),
     exportData: async () => null, // data lives in the sheet in this mode
   };

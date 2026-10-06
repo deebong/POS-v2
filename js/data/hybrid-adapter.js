@@ -30,6 +30,7 @@ function describe(op) {
     case "stock": return `Stock ${p.mode} ${p.quantity} · ${p.sku || ""}`;
     case "import": return `Import ${(p.products || []).length} products`;
     case "settings": return "Store settings";
+    case "audit": return `Security audit ${p.event?.action || ""}`;
     default: return op.type;
   }
 }
@@ -281,6 +282,18 @@ export async function createHybridAdapter(cfg) {
       } catch {
         return r;
       }
+    },
+    async auditAppend({ event }) {
+      const op = { opId: uid(), at: new Date().toISOString(), deviceId: device.id, type: "audit", payload: { event: { ...event } } };
+      outbox.push(op);
+      await persist(["outbox", "meta"]);
+      emit();
+      schedulePush();
+      return { queued: true };
+    },
+    async backupRestore(arg) {
+      if (!navigator.onLine) throw new Error("Restore requires an online connection to Google Sheets.");
+      return remote.backupRestore(arg);
     },
     saveSettings(a) {
       return mutate((db) => engine.saveSettings(db, a), () => ({ type: "settings", payload: { settings: { ...a.settings } } }));

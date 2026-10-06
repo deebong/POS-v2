@@ -1,5 +1,6 @@
 // Inventory management
 import { LABEL_SIZES, printLabels } from "./labels.js";
+import { requestApproval, requiredRoleForStock } from "./approval.js";
 import { getConfig } from "./data/backend.js";
 import { fileToDataUrl, mediaHtml, photoMode, toImageUrl } from "./media.js";
 import { barcodeSvg, barcodeUrl } from "./barcode.js";
@@ -233,7 +234,12 @@ export function openStockModal(p, { onSaved } = {}) {
     saving = true;
     modal.$("#stSave").disabled = true;
     try {
-      await adjustStock({ productId: p.id, mode, quantity: Number(qtyEl.value), reason: modal.$("#stReason").value });
+      const quantity = Number(qtyEl.value);
+      const minRole = requiredRoleForStock(quantity, mode);
+      if (minRole) {
+        await requestApproval({ action: "Stock adjustment", minRole, detail: `${mode === "set" ? "Set" : mode === "remove" ? "Remove" : "Add"} ${num(quantity)} ${p.unit} · ${p.name}` });
+      }
+      await adjustStock({ productId: p.id, mode, quantity, reason: modal.$("#stReason").value });
       toast("Stock updated");
       modal.close();
       if (onSaved) onSaved();

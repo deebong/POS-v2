@@ -2,12 +2,29 @@
 // Staff records are kept in IndexedDB so the POS can identify the operator offline.
 // PINs are stored only as PBKDF2 hashes; plaintext PINs are never persisted.
 import { idb } from "./data/idb.js";
+import { getConfig } from "./data/backend.js";
 import { uid } from "./data/logic.js";
 import { $, esc, hydrateIcons, icon, openModal, toast, confirmDialog } from "./ui.js";
 
 const KEY = "staff.users.v1";
 const SESSION_KEY = "staff.session.v1";
 const ITERATIONS = 120000;
+const SESSION_MAX_MS = 12 * 60 * 60 * 1000;
+const SESSION_IDLE_MS = 30 * 60 * 1000;
+const OFFLINE_AUTH_MAX_MS = 7 * 24 * 60 * 60 * 1000;
+const PIN_MAX_FAILED = 5;
+const PIN_LOCK_MS = 15 * 60 * 1000;
+const DEVICE_KEY = "freshmart.auth.device";
+const CRYPTO_KEY = "staff.crypto.key.v1";
+
+function localDeviceId() {
+  let id = localStorage.getItem(DEVICE_KEY);
+  if (!id) {
+    id = "DEV-" + uid();
+    localStorage.setItem(DEVICE_KEY, id);
+  }
+  return id;
+}
 
 export const ROLES = {
   admin: {
@@ -38,7 +55,7 @@ const now = () => new Date().toISOString();
 const clean = (v, max = 120) => String(v ?? "").trim().slice(0, max);
 const initials = name => clean(name, 60).split(/\s+/).filter(Boolean).slice(0,2).map(x => x[0]).join("").toUpperCase() || "?";
 const normalizeRole = role => ROLES[role] ? role : "cashier";
-const safeUser = u => ({ id: clean(u.id,80), name: clean(u.name,80), username: clean(u.username,60).toLowerCase(), phone: clean(u.phone,30), role: normalizeRole(u.role), active: u.active !== false, createdAt: u.createdAt || now(), updatedAt: u.updatedAt || now(), lastLoginAt: u.lastLoginAt || null, pinSalt: u.pinSalt || "", pinHash: u.pinHash || "", mustChangePin: !!u.mustChangePin });
+const safeUser = u => ({ id: clean(u.id,80), name: clean(u.name,80), username: clean(u.username,60).toLowerCase(), phone: clean(u.phone,30), role: normalizeRole(u.role), active: u.active !== false, createdAt: u.createdAt || now(), updatedAt: u.updatedAt || now(), lastLoginAt: u.lastLoginAt || null, pinSalt: u.pinSalt || "", pinHash: u.pinHash || "", mustChangePin: !!u.mustChangePin, failedAttempts: Number(u.failedAttempts) || 0, lockedUntil: u.lockedUntil || null, lastOnlineAuthAt: u.lastOnlineAuthAt || null });
 
 function bytesToB64(bytes) { return btoa(String.fromCharCode(...new Uint8Array(bytes))); }
 function b64ToBytes(s) { const bin = atob(s); return Uint8Array.from(bin, c => c.charCodeAt(0)); }
@@ -47,6 +64,13 @@ async function hashPin(pin, saltBytes) {
   if (!globalThis.crypto?.subtle) throw new Error("Secure PIN hashing is not available in this browser.");
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(pin), "PBKDF2", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits({ name:"PBKDF2", salt:saltBytes, iterations:ITERATIONS, hash:"SHA-256" }, key, 256);
+  return bytesToB64(bits);
+}
+export async function derivePinHash(pin, saltB64, iterations = ITERATIONS) {
+  const salt = b64ToBytes(saltB64);
+  if (!globalThis.crypto?.subtle) throw new Error("Secure PIN hashing is not available in this browser.");
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(pin), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name:"PBKDF2", salt, iterations:Number(iterations)||ITERATIONS, hash:"SHA-256" }, key, 256);
   return bytesToB64(bits);
 }
 async function makePin(pin) {
@@ -59,26 +83,64 @@ async function verifyPin(user, pin) {
   return hash === user.pinHash;
 }
 
-function activeUsers() { return users.filter(u => u.active); }
+export function activeUsers() { return users.filter(u => u.active); }
 function getUser(id) { return users.find(u => u.id === id) || null; }
-export function currentStaff() { return getUser(currentId) || activeUsers()[0] || null; }
+export function currentStaff() { return getUser(currentId) || null; }
 export function can(permission, user = currentStaff()) { return !!user && (ROLES[normalizeRole(user.role)]?.permissions || []).includes(permission); }
 export function permissionLabel(role) { return ROLES[normalizeRole(role)]?.label || "Cashier"; }
 
+async function getCryptoKey() {
+  if (!globalThis.crypto?.subtle) throw new Error("Secure local credential storage is not available in this browser.");
+  const existing = await idb.get(CRYPTO_KEY).catch(() => null);
+  if (existing instanceof CryptoKey) return existing;
+  const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+  await idb.set(CRYPTO_KEY, key);
+  return key;
+}
+
+async function encryptUsers(value) {
+  const key = await getCryptoKey();
+  const iv = randomBytes(12);
+  const plaintext = new TextEncoder().encode(JSON.stringify(value));
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plaintext);
+  return { encrypted: true, version: 1, iv: bytesToB64(iv), data: bytesToB64(ciphertext) };
+}
+
+async function decryptUsers(saved) {
+  if (!saved) return [];
+  if (!saved.encrypted) return Array.isArray(saved.users) ? saved.users : [];
+  const key = await getCryptoKey();
+  const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64ToBytes(saved.iv) }, key, b64ToBytes(saved.data));
+  const value = JSON.parse(new TextDecoder().decode(plaintext));
+  return Array.isArray(value?.users) ? value.users : [];
+}
+
 async function persist() {
   users = users.map(safeUser);
-  await idb.set(KEY, { users });
+  await idb.set(KEY, await encryptUsers({ users }));
   window.dispatchEvent(new CustomEvent("staff:changed"));
 }
 async function persistSession() {
-  await idb.set(SESSION_KEY, { userId: currentId, at: now() });
+  await idb.set(SESSION_KEY, { userId: currentId, deviceId: localDeviceId(), signedInAt: now(), lastActivityAt: now() });
+}
+async function touchSession() {
+  if (!currentId) return;
+  const s = await idb.get(SESSION_KEY).catch(() => null);
+  if (!s?.userId || s.userId !== currentId) return;
+  await idb.set(SESSION_KEY, { ...s, lastActivityAt: now() });
+}
+function sessionValid(s) {
+  if (!s?.userId) return false;
+  const t = Date.now(), signed = new Date(s.signedInAt || s.at || 0).getTime(), idle = new Date(s.lastActivityAt || s.at || 0).getTime();
+  return Number.isFinite(signed) && Number.isFinite(idle) && t - signed < SESSION_MAX_MS && t - idle < SESSION_IDLE_MS;
 }
 
 async function load() {
   const saved = await idb.get(KEY).catch(() => null);
-  users = Array.isArray(saved?.users) ? saved.users.map(safeUser).filter(u => u.id && u.name && u.username) : [];
+  users = (await decryptUsers(saved).catch(() => [])).map(safeUser).filter(u => u.id && u.name && u.username);
   const session = await idb.get(SESSION_KEY).catch(() => null);
-  currentId = session?.userId && getUser(session.userId)?.active ? session.userId : "";
+  currentId = sessionValid(session) && session.deviceId === localDeviceId() && getUser(session.userId)?.active ? session.userId : "";
+  if (!currentId && session?.userId) await idb.del(SESSION_KEY).catch(() => {});
   if (!users.length) {
     const pin = await makePin("1234");
     users = [{
@@ -94,12 +156,8 @@ async function load() {
       ...pin,
       mustChangePin: true,
     }];
-    currentId = users[0].id;
-    await idb.set(KEY, { users });
-    await persistSession();
-  } else if (!currentStaff()) {
-    currentId = activeUsers()[0]?.id || "";
-    await persistSession();
+    currentId = "";
+    await persist();
   }
 }
 
@@ -112,15 +170,29 @@ export async function initStaff() {
 async function signIn(user, pin) {
   if (!user?.active) throw new Error("This staff account is inactive.");
   if (!(await verifyPin(user, pin))) throw new Error("Incorrect PIN.");
+  const cfg = (() => { try { return JSON.parse(localStorage.getItem("pos.backend.v1") || "{}"); } catch { return {}; } })();
+  if (navigator.onLine && cfg.mode && cfg.mode !== "local" && cfg.url) {
+    const { authStatus, onlineLogin } = await import("./auth.js");
+    const status = await authStatus();
+    if (status.initialized) {
+      const serverUser = await onlineLogin(user.username, pin);
+      if (serverUser.id !== user.id) throw new Error("Server staff identity does not match this counter.");
+    }
+  }
   currentId = user.id;
-  user.lastLoginAt = now();
-  user.updatedAt = now();
-  await persist();
-  await persistSession();
+  user.lastLoginAt = now(); user.updatedAt = now();
+  await persist(); await persistSession();
   toast(`Signed in as ${user.name}`);
   return user;
 }
 
+async function syncServerStaff(setupCode = "") {
+  if (!navigator.onLine) throw new Error("Connect to the internet first.");
+  const cfg = (() => { try { return JSON.parse(localStorage.getItem("pos.backend.v1") || "{}"); } catch { return {}; } })();
+  if (!cfg.url || cfg.mode === "local") throw new Error("Connect Google Sheets first.");
+  const { syncStaffToServer } = await import("./auth.js");
+  return syncStaffToServer(users.map(safeUser), setupCode);
+}
 async function askPin(user, title = "Switch operator") {
   return new Promise(resolve => {
     const m = openModal({
@@ -144,9 +216,48 @@ async function askPin(user, title = "Switch operator") {
   });
 }
 
+
+export async function verifyStaffPin(user, pin) {
+  if (!user?.active) return false;
+  return verifyPin(user, pin);
+}
+export async function refreshStaffSession() { await initStaff(); const s = await idb.get(SESSION_KEY).catch(() => null); if (!sessionValid(s)) { currentId = ""; await idb.del(SESSION_KEY).catch(() => {}); return null; } await touchSession(); return currentStaff(); }
+export async function logoutStaff() { currentId = ""; await idb.del(SESSION_KEY).catch(() => {}); window.dispatchEvent(new CustomEvent("staff:changed")); }
+
+export async function loginStaff() {
+  await initStaff();
+  if (currentStaff()) return currentStaff();
+  return new Promise((resolve) => {
+    const m = openModal({
+      title: "Staff sign in",
+      sub: "Enter your POS username and PIN to continue.",
+      size: "sm",
+      body: `<div class="field"><label for="loginUsername">Username</label><input class="input" id="loginUsername" autocomplete="username" maxlength="60" placeholder="Username"></div><div class="field" style="margin-top:12px"><label for="loginPin">PIN</label><input class="input" id="loginPin" type="password" inputmode="numeric" autocomplete="current-password" maxlength="12" placeholder="PIN"></div><div class="staff-pin-error" id="loginError"></div>`,
+      footer: `<button class="btn btn-primary" id="loginGo">${icon("log-in")} Sign in</button>`,
+      onClose: () => resolve(null),
+    });
+    const submit = async () => {
+      const username = m.$("#loginUsername").value.trim().toLowerCase();
+      const pin = m.$("#loginPin").value.trim();
+      const err = m.$("#loginError");
+      if (!username || !pin) { err.textContent = "Enter username and PIN."; return; }
+      const user = users.find((u) => u.username === username);
+      if (!user) { err.textContent = "Invalid username or PIN."; return; }
+      const btn = m.$("#loginGo"); btn.disabled = true; err.textContent = "";
+      try { const signed = await signIn(user, pin); m.close(); resolve(signed); }
+      catch (e) { err.textContent = e.message || "Sign-in failed."; btn.disabled = false; m.$("#loginPin").select(); }
+    };
+    m.$("#loginGo").onclick = submit;
+    m.$("#loginPin").addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
+    m.$("#loginUsername").addEventListener("keydown", (e) => { if (e.key === "Enter") m.$("#loginPin").focus(); });
+    setTimeout(() => m.$("#loginUsername").focus(), 40);
+  });
+}
+
 export async function switchOperator() {
   await initStaff();
   const list = activeUsers();
+  if (!currentId && list.length === 1) return loginStaff();
   if (list.length <= 1) return toast("No other active staff accounts are available.", "warn");
   const m = openModal({
     title: "Switch operator",
@@ -181,7 +292,7 @@ function render() {
     <div class="view-enter staff-page">
       <div class="staff-toolbar">
         <div><h2>Staff & User Management</h2><p>Manage POS operators, roles and secure PIN access on this counter.</p></div>
-        <div class="actions"><button class="btn btn-outline" id="staffSwitch">${icon("user")} Switch operator</button>${can("staff") ? `<button class="btn btn-primary" id="staffAdd">${icon("plus")} Add staff</button>` : ""}</div>
+        <div class="actions"><button class="btn btn-outline" id="staffSwitch">${icon("user")} Switch operator</button><button class="btn btn-outline" id="staffLogout">${icon("log-out")} Logout</button>${can("staff") ? `<button class="btn btn-outline" id="staffAuth">Server auth</button><button class="btn btn-primary" id="staffAdd">${icon("plus")} Add staff</button>` : ""}</div>
       </div>
       <div class="staff-stats">
         <div class="card stat"><div class="stat-top">Active staff</div><div class="stat-value">${active.length}</div><div class="stat-foot">Accounts allowed to sign in</div></div>
@@ -200,12 +311,35 @@ function render() {
   $("#staffSearch",root).oninput = e => { filter=e.target.value; render(); const i=$("#staffSearch",root); i?.focus(); i?.setSelectionRange(filter.length,filter.length); };
   $("#staffStatus",root).onchange = e => { statusFilter=e.target.value; render(); };
   $("#staffAdd",root)?.addEventListener("click",()=>openEditor());
+  $("#staffAuth",root)?.addEventListener("click", openServerAuth);
   $("#staffSwitch",root)?.addEventListener("click",switchOperator);
+  $("#staffLogout",root)?.addEventListener("click", logoutStaff);
   root.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>openEditor(getUser(b.dataset.edit)));
   root.querySelectorAll("[data-pin]").forEach(b=>b.onclick=()=>resetPin(getUser(b.dataset.pin)));
   root.querySelectorAll("[data-toggle]").forEach(b=>b.onclick=()=>toggleUser(getUser(b.dataset.toggle)));
 }
 
+async function syncServerStaffIfInitialized(){try{const {authStatus}=await import("./auth.js");if((await authStatus()).initialized)await syncServerStaff();}catch(e){toast("Local staff change saved, but server staff sync failed: "+(e.message||e),"warn");}}
+
+async function openServerAuth() {
+  if (!can("staff")) return toast("Only Admin users can configure server authentication.", "error");
+  try {
+    const { authStatus } = await import("./auth.js");
+    const status = await authStatus();
+    if (status.initialized) {
+      const body = "<p class=\"muted\">Online mutations now require a valid server session. Re-sync this counter staff directory after staff changes.</p>";
+      const footer = '<button class="btn btn-outline" data-close>Close</button><button class="btn btn-primary" id="authResync">' + icon("sync") + " Sync staff</button>";
+      const m = openModal({ title: "Server authentication", sub: status.staffCount + " staff account(s) are provisioned on Google Sheets.", size: "sm", body, footer });
+      m.$("#authResync").onclick = async () => { const b=m.$("#authResync"); b.disabled=true; try { await syncServerStaff(); m.close(); toast("Staff directory synchronized with Google Sheets."); } catch(e) { toast(e.message,"error"); b.disabled=false; } };
+      return;
+    }
+    const body = "<p class=\"muted\">In Apps Script, run <b>getAuthSetupCode()</b> once and copy its returned value here. This setup code is used only during initial provisioning.</p><div class=\"field\"><label>Setup code</label><input class=\"input\" id=\"authSetupCode\" autocomplete=\"off\" maxlength=\"32\" placeholder=\"Paste setup code\"></div><div class=\"staff-pin-error\" id=\"authSetupError\"></div>";
+    const footer = '<button class="btn btn-outline" data-close>Cancel</button><button class="btn btn-primary" id="authSetupGo">' + icon("check") + " Initialize</button>";
+    const m = openModal({ title: "Initialize server authentication", sub: "One-time provisioning of the existing local staff directory.", size: "sm", body, footer });
+    m.$("#authSetupGo").onclick = async () => { const b=m.$("#authSetupGo"); b.disabled=true; try { await syncServerStaff(m.$("#authSetupCode").value.trim()); m.close(); toast("Server staff directory initialized. Online sign-in is now enforced when connected."); render(); } catch(e) { m.$("#authSetupError").textContent=e.message; b.disabled=false; } };
+    setTimeout(() => m.$("#authSetupCode").focus(), 40);
+  } catch (e) { toast(e.message || "Could not open server authentication.", "error"); }
+}
 async function openEditor(existing=null) {
   if (!can("staff")) return toast("Only Admin users can manage staff accounts.", "error");
   const editing = !!existing;
@@ -224,8 +358,8 @@ async function openEditor(existing=null) {
     if(!editing && users.some(u=>u.username===username))return toast("That username is already in use.","error");
     const btn=m.$("#sfSave");btn.disabled=true;
     try{
-      if(editing){Object.assign(existing,{name,role,phone,updatedAt:now()});await persist();toast("Staff account updated");}
-      else{const pin=m.$("#sfPin").value.trim();if(!/^\d{4,12}$/.test(pin)){btn.disabled=false;return toast("Use a numeric PIN with 4–12 digits.","error");}const hashes=await makePin(pin);users.push({id:uid(),name,username,role,phone,active:true,createdAt:now(),updatedAt:now(),lastLoginAt:null,...hashes,mustChangePin:true});await persist();toast("Staff account created");}
+      if(editing){Object.assign(existing,{name,role,phone,updatedAt:now()});await persist();await syncServerStaffIfInitialized();toast("Staff account updated");}
+      else{const pin=m.$("#sfPin").value.trim();if(!/^\d{4,12}$/.test(pin)){btn.disabled=false;return toast("Use a numeric PIN with 4–12 digits.","error");}const hashes=await makePin(pin);users.push({id:uid(),name,username,role,phone,active:true,createdAt:now(),updatedAt:now(),lastLoginAt:null,...hashes,mustChangePin:true});await persist();await syncServerStaffIfInitialized();toast("Staff account created");}
       m.close();render();
     }catch(e){btn.disabled=false;toast(e.message||"Could not save staff account.","error");}
   };
@@ -234,14 +368,14 @@ async function openEditor(existing=null) {
 async function resetPin(user) {
   if(!can("staff") || !user) return toast("Only Admin users can reset staff PINs.","error");
   const m=openModal({title:"Reset staff PIN",sub:user.name, size:"sm",body:`<div class="field"><label>New PIN</label><input class="input" id="newStaffPin" type="password" inputmode="numeric" maxlength="12" placeholder="4–12 digits"></div>`,footer:`<button class="btn btn-outline" data-close>Cancel</button><button class="btn btn-primary" id="pinSave">${icon("check")} Reset PIN</button>`});
-  m.$("#pinSave").onclick=async()=>{const pin=m.$("#newStaffPin").value.trim();if(!/^\d{4,12}$/.test(pin))return toast("Use a numeric PIN with 4–12 digits.","error");const hashes=await makePin(pin);Object.assign(user,hashes,{mustChangePin:true,updatedAt:now()});await persist();m.close();toast(`PIN reset for ${user.name}`);render();};
+  m.$("#pinSave").onclick=async()=>{const pin=m.$("#newStaffPin").value.trim();if(!/^\d{4,12}$/.test(pin))return toast("Use a numeric PIN with 4–12 digits.","error");const hashes=await makePin(pin);Object.assign(user,hashes,{mustChangePin:true,failedAttempts:0,lockedUntil:null,lastOnlineAuthAt:null,updatedAt:now()});await persist();await syncServerStaffIfInitialized();m.close();toast(`PIN reset for ${user.name}`);render();};
 }
 
 async function toggleUser(user) {
   if(!can("staff") || !user || user.id===currentId) return;
   const action=user.active?"Deactivate":"Activate";
   if(!(await confirmDialog({title:`${action} staff account?`,message:`${action} ${user.name}'s POS sign-in account?`,confirmText:action,danger:user.active})))return;
-  user.active=!user.active;user.updatedAt=now();await persist();render();toast(`${user.name} is now ${user.active?"active":"inactive"}`);
+  user.active=!user.active;user.updatedAt=now();await persist();await syncServerStaffIfInitialized();render();toast(`${user.name} is now ${user.active?"active":"inactive"}`);
 }
 
 export async function mount(el) { root=el; await initStaff(); render(); }

@@ -10,6 +10,7 @@ import { promptInstall, pwa, requestPersist, storageInfo } from "./pwa.js";
 import { receiptHtml } from "./receipt.js";
 import { importBulk, importProducts, loadAll, reloadLocal, saveSettings, scriptUpToDate, state } from "./store.js";
 import { THEME_PRESETS, applyTheme, normalizeColor } from "./theme.js";
+import { can } from "./staff.js";
 import { buildExport, demoPayload, invoiceLinesCsv, invoicesCsv, productsCsv, toPortable } from "./transfer.js";
 import {
   $, choiceDialog, confirmDialog, downloadFile, esc, fmtBytes, hydrateIcons, icon, timeAgo, toast,
@@ -362,16 +363,42 @@ export async function mount(el) {
         <div class="btn-row tight">${needsPerm ? `<button class="btn btn-sm btn-primary" data-act="reconnectFolder">Reconnect</button>` : `<button class="btn btn-sm btn-soft" data-act="backupNow">Back up now</button>`}
           <button class="btn btn-sm btn-ghost" data-act="chooseFolder">Change</button><button class="btn btn-sm btn-ghost" data-act="forgetFolder">Stop</button></div></div>`;
     }
+    let cloud = null;
+    if (mode !== "local" && navigator.onLine) {
+      try { cloud = await backend.backupStatus(); } catch (e) { cloud = { ok: false, error: e.message }; }
+    }
+    const cloudHtml = mode === "local" ? "" : `
+      <div class="card card-pad" style="margin-top:16px;border:1px solid var(--line)">
+        <div class="sec-head"><span class="stat-icon green">${icon("cloud", "lg")}</span>
+          <div><h3>Google Drive disaster recovery</h3><div class="muted">Authoritative Google Sheets snapshots stored in Drive with automatic retention.</div></div></div>
+        <div class="status-list">
+          <div class="status-row"><span class="status-ic ${cloud?.configured ? "ok" : ""}">${icon(cloud?.configured ? "check" : "cloud", "sm")}</span>
+            <div><b>${cloud?.configured ? "Automatic Drive backups are enabled" : "Drive backups are not configured"}</b>
+            <span>${cloud?.configured ? `Daily: 30 · Weekly: 12 · Monthly: 12. Last backup: ${esc(cloud.lastBackupAt ? timeAgo(cloud.lastBackupAt) : "not yet")}` : "The POS will create a private FreshMart POS Backups folder and install daily, weekly and monthly Apps Script triggers."}</span></div>
+            <button class="btn btn-sm ${cloud?.configured ? "btn-outline" : "btn-primary"}" data-act="setupCloudBackup">${icon("settings", "sm")} ${cloud?.configured ? "Reconfigure" : "Enable"}</button>
+          </div>
+          <div class="status-row"><span class="status-ic ${cloud?.lastBackupOk === true ? "ok" : ""}">${icon(cloud?.lastBackupOk === true ? "check" : "cloud", "sm")}</span>
+            <div><b>Backup verification</b><span>${cloud?.lastBackupOk === true ? "The most recent cloud backup was verified." : cloud?.lastBackupError ? esc(cloud.lastBackupError) : "Run verification after setup or any manual backup."}</span></div>
+            <div class="btn-row tight"><button class="btn btn-sm btn-soft" data-act="cloudBackupNow">${icon("download", "sm")} Back up now</button><button class="btn btn-sm btn-ghost" data-act="verifyCloudBackup">Verify</button></div>${can("staff") ? `<div class="field" style="margin-top:10px"><label>Admin restore from Drive backup</label><div style="display:flex;gap:8px"><input class="input" id="cloudRestoreId" placeholder="Paste Drive backup file ID" style="min-width:220px"><button class="btn btn-sm btn-outline" data-act="cloudRestore">${icon("undo","sm")} Restore</button></div><span class="hint">Restoring always creates a pre-restore snapshot first and invalidates active server sessions.</span></div>` : ""}
+          </div>
+        </div>
+      </div>`;
     box.innerHTML = `
       <div class="sec-head"><span class="stat-icon amber">${icon("folder", "lg")}</span>
-        <div><h3>Backups</h3><div class="muted">Extra copies of your data on this PC</div></div></div>
+        <div><h3>Backup &amp; Recovery</h3><div class="muted">Local disaster recovery plus Google Drive snapshots and validation.</div></div></div>
       <div class="status-list">${folderHtml}</div>
+      <div class="status-row" style="margin-top:12px"><span class="status-ic">${icon("check", "sm")}</span>
+        <div><b>Local backup validation</b><span>Every automatic local backup now has a SHA-256 manifest. Verification checks that the latest file is readable and untampered.</span></div>
+        <button class="btn btn-sm btn-outline" data-act="verifyFolderBackup">${icon("check", "sm")} Verify backup</button>
+      </div>
+      <div class="muted" style="font-size:12px;margin-top:10px">Local retention: 30 daily, 12 weekly and 12 monthly snapshots. Browser scheduling runs while the POS is active; Google Drive triggers run independently of the browser.</div>
+      ${cloudHtml}
       ${
         sheetsOnly
           ? ""
           : `<div class="btn-row" style="margin-top:14px">
               <button class="btn btn-outline" data-act="downloadBackup">${icon("download", "sm")} Download backup file</button>
-              <label class="btn btn-ghost" style="cursor:pointer">${icon("undo", "sm")} Restore from file…<input type="file" accept=".json,application/json" id="restoreFile" hidden /></label>
+              ${can("settings") ? `<label class="btn btn-ghost" style="cursor:pointer">${icon("undo", "sm")} Restore from file…<input type="file" accept=".json,application/json" id="restoreFile" hidden /></label>` : ""}
             </div>`
       }`;
     const rf = $("#restoreFile", box);
@@ -379,6 +406,7 @@ export async function mount(el) {
   }
 
   async function onRestore(e) {
+    if (!can("settings")) return toast("Only Admin users can restore POS data.", "error");
     const file = e.target.files[0];
     e.target.value = "";
     if (!file) return;
@@ -602,8 +630,39 @@ export async function mount(el) {
         toast((await reconnectFolder()) ? "Folder reconnected" : "Access not granted", "success");
         renderBackup();
       } else if (act === "backupNow") {
-        toast((await writeNow()) ? "Backup saved" : "Backup failed", "success");
+        const ok = await writeNow();
+        toast(ok ? "Backup saved" : "Backup failed", ok ? "success" : "error");
         renderBackup();
+      } else if (act === "verifyFolderBackup") {
+        const r = await verifyFolderBackup();
+        toast(r.message || (r.ok ? "Backup verified" : "Backup verification failed"), r.ok ? "success" : "error");
+        renderBackup();
+      } else if (act === "setupCloudBackup") {
+        if (!navigator.onLine) return toast("Connect to Google Sheets before enabling Drive backups.", "warn");
+        busy(btn, true, "Setting up…");
+        const r = await backend.backupSetup({ hour: 2 });
+        toast(r.message || "Automatic Google Drive backups enabled", "success");
+        renderBackup();
+      } else if (act === "cloudBackupNow") {
+        if (!navigator.onLine) return toast("Cloud backup needs internet.", "warn");
+        busy(btn, true, "Backing up…");
+        const r = await backend.backupNow({ kind: "manual" });
+        toast(r.message || "Google Drive backup created", "success");
+        renderBackup();
+      } else if (act === "verifyCloudBackup") {
+        if (!navigator.onLine) return toast("Cloud verification needs internet.", "warn");
+        busy(btn, true, "Verifying…");
+        const r = await backend.backupVerify();
+        toast(r.message || (r.ok ? "Cloud backup verification passed" : "Cloud backup verification failed"), r.ok ? "success" : "error");
+        renderBackup();
+      } else if (act === "cloudRestore") {
+        if (!navigator.onLine) return toast("Cloud restore needs internet.", "warn");
+        const id = ($("#cloudRestoreId", el)?.value || "").trim();
+        if (!id) return toast("Paste the Google Drive backup file ID first.", "error");
+        if (!confirm("This will replace the live Google Sheets data. A pre-restore backup will be created automatically. Continue?")) return;
+        busy(btn, true, "Restoring…");
+        try { const r = await backend.backupRestore({ fileId: id }); toast(r.message || "Restore completed", "success"); await reloadLocal(); }
+        finally { busy(btn, false); renderBackup(); }
       } else if (act === "forgetFolder") {
         await forgetFolder();
         toast("Folder backups stopped (existing files are kept)");
@@ -713,8 +772,14 @@ export async function mount(el) {
     btn.disabled = true;
     try {
       const values = read();
+      // Keep the select-backed setting explicit. This avoids FormData edge cases after
+      // a live-preview change event and makes the persisted value authoritative.
+      values.productLabelCode = $("[name=\"productLabelCode\"]", form).value;
       values.themeColor = normalizeColor(values.themeColor);
-      await saveSettings(values);
+      const saved = await saveSettings(values);
+      if (saved.productLabelCode !== values.productLabelCode) {
+        throw new Error("Product label code was not saved");
+      }
       applyTheme(state.settings);
       window.dispatchEvent(new CustomEvent("settings:changed"));
       toast(getConfig().mode === "hybrid" && !navigator.onLine ? "Saved on this PC — will sync when online" : "Store details saved");

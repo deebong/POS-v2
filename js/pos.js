@@ -1,6 +1,7 @@
 // POS / Billing screen
 import { mediaHtml } from "./media.js";
 import { qrUrl } from "./qr.js";
+import { requestApproval, requiredRoleForDiscount } from "./approval.js";
 import { calcTotals } from "./data/logic.js";
 import { uid } from "./data/logic.js";
 import { openScanner } from "./scanner.js";
@@ -643,7 +644,7 @@ export async function mount(el) {
   });
 
   const summary = $("#cartSummary", el);
-  summary.addEventListener("click", (e) => {
+  summary.addEventListener("click", async (e) => {
     if (e.target.closest("#discToggle")) {
       S.discountOpen = !S.discountOpen;
       renderCart();
@@ -655,6 +656,13 @@ export async function mount(el) {
       const type = active ? active.dataset.t : "percent";
       let value = Number($("#discValue", summary).value) || 0;
       if (type === "percent") value = Math.min(value, 100);
+      const subtotal = totals().subtotal;
+      const minRole = requiredRoleForDiscount(subtotal, type, value);
+      if (minRole) {
+        try {
+          await requestApproval({ action: "Discount", minRole, detail: `${type === "percent" ? value + "%" : money(value)} discount on ${money(subtotal)} subtotal` });
+        } catch (err) { return toast(err.message, "warn"); }
+      }
       S.discount = value > 0 ? { type, value } : { type: "none", value: 0 };
       S.discountOpen = false;
       changed();
