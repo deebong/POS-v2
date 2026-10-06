@@ -233,9 +233,23 @@ async function handleGlobalCode(code) {
 }
 async function init() {
   hydrateIcons(document);
+  const bootView = $("#view");
+  if (bootView) {
+    bootView.innerHTML = `<div class="boot-state"><div class="boot-card"><div class="boot-icon">${icon("sync")}</div><b>Preparing your counter</b><span>Loading products, stock and invoices. Please wait…</span></div></div>`;
+    hydrateIcons(bootView);
+  }
   await initStaff();
   renderOperator();
+  const dataReady = (async () => {
+    try {
+      await loadAll();
+    } catch (e) {
+      console.error(e);
+      if (getConfig().mode === "hybrid") toast(e.message, "error");
+    }
+  })();
   if (!currentStaff()) { await loginStaff(); renderOperator(); }
+  await dataReady;
   $("#brandLogo").innerHTML = icon("bag");
   initPwa();
   await singleWindowGuard();
@@ -260,12 +274,6 @@ async function init() {
     if (current && current.name === "pos") return pos.startScan();
     openScanner({ title: "Scan code", onCode: handleGlobalCode });
   });
-  try {
-    await loadAll();
-  } catch (e) {
-    console.error(e);
-    if (getConfig().mode === "hybrid") toast(e.message, "error");
-  }
   initFolderBackup(() => backend.exportData()).catch(() => {});
   applyTheme(state.settings);
   $("#brandName").textContent = state.settings.storeName;

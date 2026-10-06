@@ -675,10 +675,12 @@ ol.steps b { color: var(--text); }
 .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; align-items: center; }
 .btn-row.tight { margin-top: 0; gap: 4px; flex-wrap: nowrap; }
 .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
-.preview-card { position: sticky; top: 0; }
+.preview-card { position: sticky; top: 16px; align-self: start; min-width: 0; }
 
 .mode-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.mode-card { position: relative; text-align: left; display: flex; flex-direction: column; gap: 4px; padding: 14px; border-radius: 14px; border: 1.5px solid var(--border); background: var(--surface); transition: all 0.15s; min-height: 132px; }
+.settings-grid > * { min-width: 0; }
+.settings-grid .mode-grid { min-width: 0; }
+.mode-card { position: relative; min-width: 0; text-align: left; display: flex; flex-direction: column; gap: 4px; padding: 14px; border-radius: 14px; border: 1.5px solid var(--border); background: var(--surface); transition: all 0.15s; min-height: 132px; }
 .mode-card:hover { border-color: var(--border-strong); }
 .mode-card.selected { border-color: var(--primary); background: var(--primary-50); box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.12); }
 .mode-card b { font-size: 14px; }
@@ -814,3 +816,9 @@ html.nav-collapsed .pos { grid-template-columns: minmax(0, 1fr) 420px; }
   font-weight: 400;
   display: inline-block;
 }
+
+/* Startup state shown while the counter data is being loaded. */
+.boot-state { min-height: 360px; display: grid; place-items: center; text-align: center; padding: 32px; color: var(--text-2); }
+.boot-state .boot-card { max-width: 420px; padding: 28px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); box-shadow: var(--shadow-sm); }
+.boot-state .boot-icon { width: 42px; height: 42px; margin: 0 auto 12px; display: grid; place-items: center; border-radius: 12px; background: var(--primary-50); color: var(--primary); }
+.boot-state .boot-card b { display: block; margin-bottom: 4px; color: var(--text); }

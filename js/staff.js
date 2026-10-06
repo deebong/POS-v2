@@ -172,12 +172,9 @@ async function signIn(user, pin) {
   if (!(await verifyPin(user, pin))) throw new Error("Incorrect PIN.");
   const cfg = (() => { try { return JSON.parse(localStorage.getItem("pos.backend.v1") || "{}"); } catch { return {}; } })();
   if (navigator.onLine && cfg.mode && cfg.mode !== "local" && cfg.url) {
-    const { authStatus, onlineLogin } = await import("./auth.js");
-    const status = await authStatus();
-    if (status.initialized) {
-      const serverUser = await onlineLogin(user.username, pin);
-      if (serverUser.id !== user.id) throw new Error("Server staff identity does not match this counter.");
-    }
+    const { onlineLogin } = await import("./auth.js");
+    const serverUser = await onlineLogin(user.username, pin);
+    if (serverUser.id !== user.id) throw new Error("Server staff identity does not match this counter.");
   }
   currentId = user.id;
   user.lastLoginAt = now(); user.updatedAt = now();
@@ -270,13 +267,14 @@ export async function loginStaff() {
   await initStaff();
   if (currentStaff()) return currentStaff();
   return new Promise((resolve) => {
+    let completed = false;
     const m = openModal({
       title: "Staff sign in",
       sub: "Enter your POS username and PIN to continue.",
       size: "sm",
       body: `<div class="field"><label for="loginUsername">Username</label><input class="input" id="loginUsername" autocomplete="username" maxlength="60" placeholder="Username"></div><div class="field" style="margin-top:12px"><label for="loginPin">PIN</label><input class="input" id="loginPin" type="password" inputmode="numeric" autocomplete="current-password" maxlength="12" placeholder="PIN"></div><div class="staff-pin-error" id="loginError"></div>`,
-      footer: `<button class="btn btn-primary" id="loginGo">${icon("log-in")} Sign in</button>`,
-      onClose: () => resolve(null),
+      footer: `<button class="btn btn-primary login-submit" id="loginGo">${icon("log-in")}<span>Sign in</span></button>`,
+      onClose: () => { if (!completed) resolve(null); },
     });
     const submit = async () => {
       const username = m.$("#loginUsername").value.trim().toLowerCase();
@@ -286,7 +284,7 @@ export async function loginStaff() {
       const user = users.find((u) => u.username === username);
       if (!user) { err.textContent = "Invalid username or PIN."; return; }
       const btn = m.$("#loginGo"); btn.disabled = true; err.textContent = "";
-      try { const signed = await signIn(user, pin); m.close(); resolve(signed); }
+      try { const signed = await signIn(user, pin); completed = true; m.close(); resolve(signed); }
       catch (e) { err.textContent = e.message || "Sign-in failed."; btn.disabled = false; m.$("#loginPin").select(); }
     };
     m.$("#loginGo").onclick = submit;
