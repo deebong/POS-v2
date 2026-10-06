@@ -4,6 +4,7 @@
 import { idb } from "./data/idb.js";
 import { state } from "./store.js";
 import { $, esc, hydrateIcons, icon, money, openModal, toast } from "./ui.js";
+import { currentStaff } from "./staff.js";
 
 const KEY = "cash.drawer.v2";
 const LEGACY_KEY = "cash.drawer.v1";
@@ -81,7 +82,7 @@ function render() {
       </div>
 
       <div class="cash-stat-grid">
-        <div class="card stat"><div class="stat-top"><span class="stat-icon ${active ? "green" : "muted"}">${icon("cash", "lg")}</span>Drawer status</div><div class="stat-value cash-status ${active ? "open" : "closed"}">${statusLabel()}</div><div class="stat-foot">${active ? `${CASHIER} · ${COUNTER}` : "No active cash session"}</div></div>
+        <div class="card stat"><div class="stat-top"><span class="stat-icon ${active ? "green" : "muted"}">${icon("cash", "lg")}</span>Drawer status</div><div class="stat-value cash-status ${active ? "open" : "closed"}">${statusLabel()}</div><div class="stat-foot">${active ? `${operatorName()} · ${COUNTER}` : "No active cash session"}</div></div>
         <div class="card stat"><div class="stat-top"><span class="stat-icon blue">${icon("layers", "lg")}</span>Opening float</div><div class="stat-value">${active ? money0(active.openingFloat) : "—"}</div><div class="stat-foot">${active ? `Opened ${fmtDate(active.openedAt)}` : "Start a drawer session to begin"}</div></div>
         <div class="card stat"><div class="stat-top"><span class="stat-icon green">${icon("dollar", "lg")}</span>Cash sales</div><div class="stat-value">${active ? money0(salesTotal) : "—"}</div><div class="stat-foot">${active ? `${sales.length} cash sale${sales.length === 1 ? "" : "s"}` : "No active session"}</div></div>
         <div class="card stat"><div class="stat-top"><span class="stat-icon violet">${icon("calculator", "lg")}</span>Expected cash</div><div class="stat-value">${active ? money0(exp) : "—"}</div><div class="stat-foot">${active ? `In ${money0(inTotal)} · Out ${money0(outTotal)}` : "Calculated when drawer is open"}</div></div>
@@ -105,7 +106,7 @@ function render() {
         <div class="card">
           <div class="card-head"><div><h3>Cash movements</h3><div class="sub">Manual additions and removals</div></div></div>
           <div class="card-body cash-movements">
-            ${movements.length ? movements.map((m) => `<div class="list-row"><span class="movement-icon ${m.type}">${icon(m.type === "in" ? "plus" : "minus", "sm")}</span><div class="grow"><div class="t">${esc(m.reason || (m.type === "in" ? "Cash in" : "Cash out"))}</div><div class="s">${fmtDate(m.at)} · ${esc(m.by || CASHIER)}</div></div><b class="${m.type === "in" ? "positive" : "negative"}">${m.type === "in" ? "+" : "−"} ${money0(m.amount)}</b></div>`).join("") : `<div class="empty"><div class="big">${icon("cash", "lg")}</div><p>No manual cash movements</p><span>Use Cash in / out for petty cash, change float or other drawer adjustments.</span></div>`}
+            ${movements.length ? movements.map((m) => `<div class="list-row"><span class="movement-icon ${m.type}">${icon(m.type === "in" ? "plus" : "minus", "sm")}</span><div class="grow"><div class="t">${esc(m.reason || (m.type === "in" ? "Cash in" : "Cash out"))}</div><div class="s">${fmtDate(m.at)} · ${esc(m.by || operatorName())}</div></div><b class="${m.type === "in" ? "positive" : "negative"}">${m.type === "in" ? "+" : "−"} ${money0(m.amount)}</b></div>`).join("") : `<div class="empty"><div class="big">${icon("cash", "lg")}</div><p>No manual cash movements</p><span>Use Cash in / out for petty cash, change float or other drawer adjustments.</span></div>`}
           </div>
         </div>
       </div>` : `
@@ -114,7 +115,7 @@ function render() {
       <div class="card mt-16">
         <div class="card-head"><div><h3>Previous drawer sessions</h3><div class="sub">Recently closed sessions on this counter</div></div></div>
         <div class="table-wrap cash-history"><table><thead><tr><th>SESSION</th><th>OPENED</th><th>DURATION</th><th>EXPECTED</th><th>COUNTED</th><th>VARIANCE</th><th>STATUS</th></tr></thead><tbody>
-          ${recent.length ? recent.map((s) => { const variance = s.countedCash == null ? null : round(s.countedCash - n(s.expectedCash)); return `<tr><td><b>${esc(s.id)}</b><div class="muted">${esc(s.by || CASHIER)} · ${esc(s.counter || COUNTER)}</div></td><td>${fmtDate(s.openedAt)}<div class="muted">Closed ${fmtDate(s.closedAt)}</div></td><td>${sessionDuration(s)}</td><td><b>${money0(s.expectedCash)}</b></td><td>${s.countedCash == null ? "—" : money0(s.countedCash)}</td><td>${variance == null ? "—" : `<span class="variance ${variance === 0 ? "zero" : variance > 0 ? "plus" : "minus"}">${variance > 0 ? "+" : ""}${money0(variance)}</span>`}</td><td><span class="badge badge-green">Closed</span></td></tr>`; }).join("") : `<tr><td colspan="7"><div class="empty"><p>No closed drawer sessions yet.</p></div></td></tr>`}
+          ${recent.length ? recent.map((s) => { const variance = s.countedCash == null ? null : round(s.countedCash - n(s.expectedCash)); return `<tr><td><b>${esc(s.id)}</b><div class="muted">${esc(s.by || operatorName())} · ${esc(s.counter || COUNTER)}</div></td><td>${fmtDate(s.openedAt)}<div class="muted">Closed ${fmtDate(s.closedAt)}</div></td><td>${sessionDuration(s)}</td><td><b>${money0(s.expectedCash)}</b></td><td>${s.countedCash == null ? "—" : money0(s.countedCash)}</td><td>${variance == null ? "—" : `<span class="variance ${variance === 0 ? "zero" : variance > 0 ? "plus" : "minus"}">${variance > 0 ? "+" : ""}${money0(variance)}</span>`}</td><td><span class="badge badge-green">Closed</span></td></tr>`; }).join("") : `<tr><td colspan="7"><div class="empty"><p>No closed drawer sessions yet.</p></div></td></tr>`}
         </tbody></table></div>
       </div>
     </div>`;
@@ -129,7 +130,7 @@ function render() {
 
 function openDrawerModal() {
   const m = openModal({
-    title: "Open cash drawer", sub: `${CASHIER} · ${COUNTER}`,
+    title: "Open cash drawer", sub: `${operatorName()} · ${COUNTER}`,
     body: `<div class="form-grid"><div class="field span-2"><label>Opening cash</label><div class="money-input"><span>${esc(state.settings.currency)}</span><input class="input" id="drawerOpening" inputmode="decimal" value="5000" autofocus /></div><span class="hint">Count the physical cash in the drawer before opening the shift.</span></div><div class="field span-2"><label>Note <span class="muted">(optional)</span></label><textarea class="textarea" id="drawerOpeningNote" rows="2" placeholder="e.g. Starting float received from manager"></textarea></div></div>`,
     footer: `<button class="btn btn-outline" data-close>Cancel</button><button class="btn btn-primary" id="drawerOpenSave">${icon("check")} Open drawer</button>`,
   });
@@ -139,7 +140,7 @@ function openDrawerModal() {
     if (db.active) return m.close();
     const at = now();
     const id = `DR-${at.slice(0,10).replaceAll("-", "")}-${String(db.sessions.length + 1).padStart(4, "0")}`;
-    db.active = { id, openedAt: at, openedBy: CASHIER, by: CASHIER, counter: COUNTER, openingFloat: opening, openingNote: m.$("#drawerOpeningNote").value.trim() };
+    db.active = { id, openedAt: at, openedBy: CASHIER, by: operatorName(), counter: COUNTER, openingFloat: opening, openingNote: m.$("#drawerOpeningNote").value.trim() };
     await save(); m.close(); render(); toast("Cash drawer opened");
   };
 }
@@ -157,7 +158,7 @@ function openMovementModal() {
     if (!(amount > 0)) return toast("Enter an amount greater than zero", "error");
     if (!reason) return toast("Enter a reason for the cash movement", "error");
     const type = m.$('input[name="mvType"]:checked').value;
-    db.movements.push({ id: `MV-${Date.now()}`, sessionId: db.active.id, type, amount, reason, at: now(), by: CASHIER });
+    db.movements.push({ id: `MV-${Date.now()}`, sessionId: db.active.id, type, amount, reason, at: now(), by: operatorName() });
     await save(); m.close(); render(); toast(type === "in" ? "Cash added to drawer" : "Cash removed from drawer");
   };
 }

@@ -37,6 +37,7 @@ The current navigation and implementation contain these modules:
 | Low Stock | Implemented | Out-of-stock/low-stock detection, reorder gap, cost value, filters, search, restock action and CSV export |
 | Reports | Implemented | Date-range sales report, net sales, average bill, refunds, payment methods, sales by day, top products, reconciliation and CSV export |
 | Loyalty | Implemented locally | Member directory, earn-rate configuration, tiers, points balance, member ledger, manual adjustments, redemption and CSV export |
+| Staff & Users | Implemented locally | Staff directory, Admin/Manager/Cashier roles, permission model, salted PBKDF2 PINs, operator switching, activation/deactivation and PIN reset |
 | Settings | Implemented | Storage mode, Google Sheets connection, import/export, store profile, appearance, product image settings, backup/offline controls and app installation support |
 
 ### Recent stability fixes
@@ -98,7 +99,7 @@ Still required:
 - Store the loyalty ledger centrally when Google Sheets mode is enabled.
 - Define configurable earn/redeem rules rather than only the current simple spend-rate model.
 
-#### 3. Replace hard-coded operator identity with real cashier/session identity
+#### 3. Staff / user management and operator identity\n\nA local Staff & Users module is now implemented as the first step of the operator/security layer. It provides Admin, Manager and Cashier roles, a permission matrix, salted PBKDF2 PIN storage, operator switching, account activation/deactivation, PIN reset and dynamic operator attribution in the shell, audit log and cash drawer.\n\nThe current implementation is deliberately local-first so it works offline. It is **not yet a server-authoritative multi-counter authentication system**. Google Sheets staff synchronization, server-side authorization, session expiry/lock policy and cross-device identity reconciliation remain required before production deployment.\n\n#### 4. Replace hard-coded operator identity with full cashier/session security
 
 The current UI displays **Anand Ibrahim / Anand I** and several operational modules use fixed operator/counter values. This is intentional demo data, but it is not an authentication system.
 
@@ -115,7 +116,7 @@ Production work should introduce:
 
 The application should continue to work offline, so authentication/session design must not depend on a live network for every transaction.
 
-#### 4. Payment integration
+#### 5. Payment integration
 
 Cash, card and UPI/QR currently exist as POS tender types, but the repository does not contain a live payment-gateway integration such as Razorpay, terminal API integration or payment webhook reconciliation.
 
@@ -132,7 +133,7 @@ Required pieces would include:
 - Duplicate-payment protection
 - Payment reference IDs on invoices
 
-#### 5. Hardware integration
+#### 6. Hardware integration
 
 The application currently provides browser-based scanning and browser printing. A production retail deployment may additionally require:
 
@@ -149,7 +150,7 @@ These should be optional adapters so the web/PWA version continues to work witho
 
 ### B. Important reporting and business functionality still to develop
 
-#### 6. Advanced reports / analytics
+#### 7. Advanced reports / analytics
 
 The current Reports module covers the basic operational report set. A later reporting phase should add:
 
@@ -169,7 +170,7 @@ The current Reports module covers the basic operational report set. A later repo
 - Exportable detailed datasets
 - Optional dashboard charts
 
-#### 7. GST / tax compliance reporting
+#### 8. GST / tax compliance reporting
 
 The POS already stores tax rates and store GST information, but a dedicated compliance/reporting layer is not yet present.
 
@@ -185,7 +186,7 @@ Potential scope:
 
 This should be designed around the actual business's accounting requirements before implementation.
 
-#### 8. Supplier and purchasing expansion
+#### 9. Supplier and purchasing expansion
 
 Purchases currently cover the core supplier and incoming-stock workflow. Production expansion can add:
 
@@ -198,7 +199,7 @@ Purchases currently cover the core supplier and incoming-stock workflow. Product
 - Supplier performance
 - Purchase approval states
 
-#### 9. Inventory expansion
+#### 10. Inventory expansion
 
 The inventory foundation is implemented. Remaining advanced inventory features include:
 
@@ -220,7 +221,7 @@ The existing `transfer.js` and related foundations should be reviewed before dup
 
 ### C. Customer and retail engagement work
 
-#### 10. Customer insights
+#### 11. Customer insights
 
 Customers currently provide directory and purchase-history information. A fuller CRM layer could add:
 
@@ -233,7 +234,7 @@ Customers currently provide directory and purchase-history information. A fuller
 - Churn/inactivity indicators
 - Birthday/anniversary fields if the business wants them
 
-#### 11. Offers and promotions
+#### 12. Offers and promotions
 
 Not yet a dedicated module. Potential scope:
 

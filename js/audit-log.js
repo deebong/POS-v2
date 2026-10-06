@@ -2,10 +2,10 @@
 // Audit records stay on this PC because they describe local operator activity.
 import { idb } from "./data/idb.js";
 import { $, esc, hydrateIcons, icon, money, toast } from "./ui.js";
+import { currentStaff } from "./staff.js";
 
 const KEY = "audit.log.v1";
 const MAX_RECORDS = 1000;
-const ACTOR = "Anand I";
 const COUNTER = "Counter 1";
 
 let records = [];
@@ -22,7 +22,7 @@ export async function recordAudit({ action, module = "System", detail = "", enti
   const item = {
     id: `AUD-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     at: now(),
-    actor: ACTOR,
+    actor: currentStaff()?.name || "Unknown operator",
     counter: COUNTER,
     action: String(action),
     module: String(module),
@@ -59,6 +59,7 @@ function actions() {
 function render() {
   if (!root || !root.isConnected) return;
   const rows = filtered();
+  const actor = currentStaff()?.name || "Unknown operator";
   const today = new Date();
   const todayKey = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
   const todayCount = records.filter((r) => {
@@ -75,7 +76,7 @@ function render() {
       <div class="audit-stats">
         <div class="card stat"><div class="stat-top"><span class="stat-icon blue">${icon("list", "lg")}</span>Total events</div><div class="stat-value">${records.length}</div><div class="stat-foot">Maximum ${MAX_RECORDS} events retained</div></div>
         <div class="card stat"><div class="stat-top"><span class="stat-icon green">${icon("clock", "lg")}</span>Today</div><div class="stat-value">${todayCount}</div><div class="stat-foot">Events recorded today</div></div>
-        <div class="card stat"><div class="stat-top"><span class="stat-icon violet">${icon("user", "lg")}</span>Operator</div><div class="stat-value audit-operator">${esc(ACTOR)}</div><div class="stat-foot">${esc(COUNTER)}</div></div>
+        <div class="card stat"><div class="stat-top"><span class="stat-icon violet">${icon("user", "lg")}</span>Operator</div><div class="stat-value audit-operator">${esc(actor)}</div><div class="stat-foot">${esc(COUNTER)}</div></div>
         <div class="card stat"><div class="stat-top"><span class="stat-icon orange">${icon("alert", "lg")}</span>Attention</div><div class="stat-value">${critical}</div><div class="stat-foot">Warnings or critical events</div></div>
       </div>
       <section class="card mt-16 audit-card">
