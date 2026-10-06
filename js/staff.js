@@ -273,6 +273,8 @@ export async function loginStaff() {
   if (currentStaff()) return currentStaff();
   return new Promise((resolve) => {
     let completed = false;
+    let repairUser = null;
+    let repairPin = "";
     const m = openModal({
       title: "Staff sign in",
       sub: "Enter your POS username and PIN to continue.",
@@ -294,6 +296,8 @@ export async function loginStaff() {
        }
        if (!user) { err.textContent = "Invalid username or PIN."; return; }
       const btn = m.$("#loginGo"); btn.disabled = true; err.textContent = "";
+      repairUser = user;
+      repairPin = pin;
       try {
         const signed = await signIn(user, pin);
         completed = true; m.close(); resolve(signed);
@@ -311,10 +315,14 @@ export async function loginStaff() {
     };
     m.$("#loginRepairGo").onclick = async () => {
       const b = m.$("#loginRepairGo"), code = m.$("#loginSetupCode").value.trim();
+      const username = m.$("#loginUsername").value.trim().toLowerCase();
+      const pin = m.$("#loginPin").value.trim();
+      const repairTarget = repairUser || users.find((u) => u.username === username);
       b.disabled = true; err.textContent = "";
       try {
+        if (!repairTarget || !pin) throw new Error("Enter the same username and PIN, then run the repair.");
         await repairServerBootstrap(code);
-        const signed = await signIn(user, pin);
+        const signed = await signIn(repairTarget, pin);
         completed = true; m.close(); resolve(signed);
       } catch (e) {
         err.textContent = e.message || "Server repair failed.";
