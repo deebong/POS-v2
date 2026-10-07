@@ -350,9 +350,9 @@ async function recoverConnection(m) {
     }
   };
 }
-export async function loginStaff() {
+export async function loginStaff(force = false) {
   await initStaff();
-  if (currentStaff()) return currentStaff();
+  if (!force && currentStaff()) return currentStaff();
   return new Promise((resolve) => {
     let completed = false;
     let repairUser = null;
