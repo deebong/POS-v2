@@ -317,6 +317,12 @@ async function init() {
   setInterval(tickClock, 20000);
   setInterval(async () => { const u = await refreshStaffSession(); if (!u) { renderOperator(); location.hash = "#/dashboard"; await loginStaff(); renderOperator(); } }, 60000);
   window.addEventListener("sync:status", renderSync);
+  // When background server authentication completes after local sign-in, immediately
+  // retry the durable hybrid queue so a transient auth race cannot leave the banner stuck.
+  window.addEventListener("staff:server-auth", (e) => {
+    if (!e.detail?.ok || getConfig().mode !== "hybrid" || !navigator.onLine) return;
+    refreshData().finally(() => renderSync());
+  });
   window.addEventListener("data:changed", applyDataChange);
   window.addEventListener("settings:changed", () => { applyBrand(); applyLanguage(document, state.settings.language); });
   window.addEventListener("language:preview", (e) => applyLanguage(document, e.detail?.language || "en"));
