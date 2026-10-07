@@ -453,7 +453,13 @@ table.table { width: 100%; border-collapse: collapse; }
 /* ==========================================================================
    Receipt
    ========================================================================== */
-.receipt-stage { background: #e9edf2; padding: 20px; display: flex; justify-content: center; }
+.receipt-stage { background: #e9edf2; padding: 20px; display: flex; justify-content: center; position: relative; }
+.receipt-stage-success { padding-top: 54px; }
+.receipt-print-float { position: absolute; top: 12px; right: 16px; z-index: 3; box-shadow: var(--shadow-sm); }
+@media (max-width: 620px) {
+  .receipt-stage-success { padding-top: 58px; }
+  .receipt-print-float { right: 12px; }
+}
 .receipt {
   width: 302px; background: #fff; color: #111; padding: 20px 18px 22px; position: relative;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; font-size: 12px; line-height: 1.5;
