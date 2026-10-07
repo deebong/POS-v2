@@ -30,6 +30,7 @@ function describe(op) {
     case "stock": return `Stock ${p.mode} ${p.quantity} · ${p.sku || ""}`;
     case "import": return `Import ${(p.products || []).length} products`;
     case "settings": return "Store settings";
+    case "customer.save": return `${p.customer?.id ? "Edit" : "New"} customer ${p.customer?.name || ""}`;
     case "audit": return `Security audit ${p.event?.action || ""}`;
     default: return op.type;
   }
@@ -61,6 +62,7 @@ export async function createHybridAdapter(cfg) {
     const s = snapshot || {};
     const db = {
       products: structuredClone(s.products || []),
+      customers: structuredClone(s.customers || []),
       sales: structuredClone(s.sales || []).map((x) => ({ clientRef: null, ...x })),
       saleItems: structuredClone(s.saleItems || []),
       movements: [],
@@ -168,6 +170,7 @@ export async function createHybridAdapter(cfg) {
           }
           snapshot = {
             products: incomingProducts,
+            customers: Array.isArray(d.customers) ? d.customers : [],
             sales: incomingSales,
             saleItems: Array.isArray(d.saleItems) ? d.saleItems : [],
             settings: d.settings || {},
@@ -188,7 +191,8 @@ export async function createHybridAdapter(cfg) {
         meta.lastSyncAt = new Date().toISOString();
         status.lastError = null;
         await persist(pull ? ["snapshot", "outbox", "applied", "meta"] : ["meta"]);
-        return { changed };
+        const current = engine.bootstrap(view, { days: HISTORY_DAYS });
+        return { changed, data: current };
       } catch (e) {
         status.lastError = e.message || "Sync failed";
         if (throwOnError) throw e;
@@ -304,6 +308,13 @@ export async function createHybridAdapter(cfg) {
     async backupRestore(arg) {
       if (!navigator.onLine) throw new Error("Restore requires an online connection to Google Sheets.");
       return remote.backupRestore(arg);
+    },
+    saveCustomer({ customer }) {
+      const before = view.customers?.find((x) => x.id === customer?.id);
+      return mutate(
+        (db) => engine.saveCustomer(db, { customer }),
+        (res) => ({ type: "customer.save", payload: { customer: { ...res.customer } } }),
+      );
     },
     saveSettings(a) {
       return mutate((db) => engine.saveSettings(db, a), () => ({ type: "settings", payload: { settings: { ...a.settings } } }));
