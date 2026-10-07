@@ -307,7 +307,7 @@ export async function ensureOnlineStaffAuth() {
   if (getAuthToken()) return true;
   if (onlineAuthPromise) return onlineAuthPromise;
   onlineAuthPromise = (async () => {
-    const localHash = await getPinVerifier(user, "");
+    const localHash = user.pinHash || "";
     if (!localHash) throw new Error("The local staff credential is unavailable.");
     const { onlineLogin } = await import("./auth.js");
     const serverUser = await onlineLogin(user.username, "", {
