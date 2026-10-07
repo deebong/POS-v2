@@ -4,7 +4,7 @@
 // The Google Apps Script backend (apps-script/Code.gs) implements the same rules.
 import { SETTING_KEYS, calcTotals, invoiceNumber, num, parseProduct, round2, round3 } from "./logic.js";
 
-export const emptyDb = () => ({ products: [], sales: [], saleItems: [], movements: [], settings: {} });
+export const emptyDb = () => ({ products: [], sales: [], saleItems: [], movements: [], customers: [], settings: {} });
 
 const nextId = (rows) => rows.reduce((m, r) => (r.id > m ? r.id : m), 0) + 1;
 // Offline-first mode attaches db.$newId to hand out temporary (negative) ids until the sheet assigns real ones.
@@ -57,11 +57,35 @@ export function bootstrap(db, { days = 90 } = {}) {
   return {
     settings: db.settings,
     products: db.products,
+    customers: db.customers || [],
     sales,
     saleItems: db.saleItems.filter((i) => ids.has(i.saleId)),
     spreadsheetUrl: "",
     spreadsheetName: "",
   };
+}
+
+
+export function saveCustomer(db, { customer = {} }) {
+  const name = cleanText(customer.name, 100) || "";
+  const phone = cleanText(customer.phone, 30) || "";
+  const email = cleanText(customer.email, 160) || "";
+  if (!name && !phone && !email) throw new Error("Customer name, phone or email is required.");
+  const id = String(customer.id || "");
+  let cur = id ? (db.customers || []).find((x) => String(x.id) === id) : null;
+  const now = new Date().toISOString();
+  const data = {
+    id: cur?.id || id || crypto.randomUUID(),
+    name, phone, email,
+    address: cleanText(customer.address, 500) || "",
+    notes: cleanText(customer.notes, 500) || "",
+    createdAt: cur?.createdAt || now,
+    updatedAt: now,
+    active: customer.active !== false,
+  };
+  db.customers ||= [];
+  if (cur) Object.assign(cur, data); else db.customers.push(data);
+  return { customer: data };
 }
 
 export function saveProduct(db, { product }) {
@@ -397,6 +421,9 @@ export function replayOp(db, op) {
       return;
     case "settings":
       saveSettings(db, { settings: p.settings || {} });
+      return;
+    case "customer.save":
+      saveCustomer(db, { customer: p.customer || {} });
       return;
     default:
   }
