@@ -951,3 +951,63 @@ input[type="file"]::file-selector-button:hover { background: var(--surface); bor
   .backup-verify-row .btn-row .btn { flex: 0 1 auto; }
   .settings-save-sticky { margin-bottom: 14px; }
 }
+
+
+/* Tamil / multilingual backup card: keep actions and long descriptions in a stable layout. */
+.backup-verify-row {
+  grid-template-columns: auto minmax(0, 1fr) minmax(max-content, auto);
+  column-gap: 12px;
+  row-gap: 8px;
+}
+.backup-verify-row > div:nth-child(2) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+.backup-verify-row > div:nth-child(2) b,
+.backup-verify-row > div:nth-child(2) span {
+  display: block;
+}
+.backup-verify-row > .btn-row {
+  align-self: start;
+  justify-self: end;
+  max-width: 100%;
+}
+.backup-verify-row > .field {
+  grid-column: 2 / -1;
+  min-width: 0;
+}
+.backup-verify-row > .field > div {
+  display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.backup-verify-row > .field .input {
+  flex: 1 1 220px;
+  min-width: 0 !important;
+}
+@media (max-width: 900px) {
+  .backup-verify-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .backup-verify-row > .btn-row {
+    grid-column: 2;
+    justify-self: start;
+    width: 100%;
+  }
+  .backup-verify-row > .btn-row .btn {
+    flex: 0 1 auto;
+  }
+  .backup-verify-row > .field {
+    grid-column: 2;
+  }
+}
+@media (max-width: 520px) {
+  .backup-verify-row > .btn-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .backup-verify-row > .btn-row .btn {
+    width: 100%;
+  }
+}
