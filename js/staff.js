@@ -2,7 +2,7 @@
 // Staff records are kept in IndexedDB so the POS can identify the operator offline.
 // PINs are stored only as PBKDF2 hashes; plaintext PINs are never persisted.
 import { idb } from "./data/idb.js";
-import { getConfig } from "./data/backend.js";
+import { getConfig, saveConfig } from "./data/backend.js";
 import { uid } from "./data/logic.js";
 import { $, esc, hydrateIcons, icon, openModal, toast, confirmDialog } from "./ui.js";
 
@@ -308,6 +308,29 @@ export async function openOperatorMenu() {
   });
 }
 
+async function recoverConnection(m) {
+  const cfg = getConfig();
+  const body = `<div class="field"><label for="loginSheetUrl">Google Sheets Web App URL</label><input class="input" id="loginSheetUrl" spellcheck="false" autocomplete="off" value="${esc(cfg.url || "")}" placeholder="https://script.google.com/macros/s/…/exec"></div><div class="field" style="margin-top:12px"><label for="loginSheetKey">Access key <span class="muted">(only if configured)</span></label><input class="input" id="loginSheetKey" type="password" autocomplete="off" value="${esc(cfg.key || "")}"></div><div class="staff-pin-error" id="loginConnError"></div><p class="muted" style="font-size:12px;margin-top:10px">The URL is tested with the POS API before it replaces the saved connection.</p>`;
+  const cm = openModal({ title:"Reconnect Google Sheets", sub:"Repair the counter connection without signing in first.", size:"sm", body, footer:`<button class="btn btn-outline" data-close>Cancel</button><button class="btn btn-primary" id="loginConnGo">${icon("check")} Test &amp; save</button>` });
+  cm.$("#loginConnGo").onclick = async () => {
+    const b=cm.$("#loginConnGo"), err=cm.$("#loginConnError");
+    const url=cm.$("#loginSheetUrl").value.trim(), key=cm.$("#loginSheetKey").value.trim();
+    if (!/^https:\\/\\/script\\.google\\.com\\/(a\\/[^/]+\\/)?macros\\/s\\/[^/]+\\/exec$/.test(url)) { err.textContent="Enter the deployed Apps Script Web App URL ending in /exec."; return; }
+    b.disabled=true; err.textContent="";
+    try {
+      const { createSheetsAdapter } = await import("./data/sheets-adapter.js");
+      const api=createSheetsAdapter({url,key});
+      const result=await api.ping();
+      if (!result?.ok) throw new Error("The Web App did not return a valid POS API response.");
+      saveConfig({ ...cfg, mode: cfg.mode === "local" ? "sheets" : cfg.mode, url, key });
+      cm.close();
+      toast("Google Sheets connection updated.");
+    } catch(e) {
+      err.textContent=e.message || "Could not connect to the Google Sheets Web App.";
+      b.disabled=false;
+    }
+  };
+}
 export async function loginStaff() {
   await initStaff();
   if (currentStaff()) return currentStaff();
@@ -320,7 +343,7 @@ export async function loginStaff() {
       sub: "Enter your POS username and PIN to continue.",
       size: "sm",
       body: `<div class="field"><label for="loginUsername">Username</label><input class="input" id="loginUsername" autocomplete="username" maxlength="60" placeholder="Username"></div><div class="field" style="margin-top:12px"><label for="loginPin">PIN</label><input class="input" id="loginPin" type="password" inputmode="numeric" autocomplete="current-password" maxlength="12" placeholder="PIN"></div><div class="staff-pin-error" id="loginError"></div><div id="loginRepair" style="display:none;margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface-2)"><div class="muted" style="margin-bottom:8px">Your local PIN is valid, but the Google Sheets staff credential is out of sync. Run <b>getAuthSetupCode()</b> in Apps Script and paste the one-time code below.</div><div class="field"><label for="loginSetupCode">One-time setup code</label><input class="input" id="loginSetupCode" autocomplete="off" maxlength="32" placeholder="Setup code"></div><button class="btn btn-outline" id="loginRepairGo" style="width:100%;margin-top:8px">${icon("sync")} Repair server sign-in</button></div>`,
-      footer: `<button class="btn btn-primary login-submit" id="loginGo">${icon("log-in")}<span>Sign in</span></button>`,
+      footer: `<button class="btn btn-ghost" id="loginConnection">${icon("settings")} Connection</button><button class="btn btn-primary login-submit" id="loginGo">${icon("log-in")}<span>Sign in</span></button>`,
       onClose: () => { if (!completed) resolve(null); },
     });
     const submit = async () => {
@@ -365,6 +388,7 @@ export async function loginStaff() {
         btn.disabled = false; m.$("#loginPin").select();
       }
     };
+    m.$("#loginConnection").onclick = async () => { m.close(); await recoverConnection(m); };
     m.$("#loginRepairGo").onclick = async () => {
       const b = m.$("#loginRepairGo"), code = m.$("#loginSetupCode").value.trim();
       const username = m.$("#loginUsername").value.trim().toLowerCase();
