@@ -5,13 +5,10 @@
 // preflight — Apps Script web apps don't answer OPTIONS. The response is JSON.
 
 export function createSheetsAdapter({ url, key }) {
-  async function call(action, payload = {}, { timeoutMs = 45000 } = {}) {
+  async function call(action, payload = {}, { timeoutMs = 45000, retries = 1 } = {}) {
     let lastError = null;
 
-    // Apps Script ContentService responses are redirected to a googleusercontent.com URL.
-    // A short retry helps with transient cold-start/redirect failures without making normal
-    // requests noticeably slower.
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), timeoutMs);
       try {
@@ -24,15 +21,15 @@ export function createSheetsAdapter({ url, key }) {
           signal: ctrl.signal,
         });
 
-        const text = await res.text();
+        const responseText = await res.text();
         let data = null;
         try {
-          data = JSON.parse(text);
+          data = JSON.parse(responseText);
         } catch {
           lastError = new Error(
             `Google Sheets returned a non-JSON response (HTTP ${res.status}). The Apps Script Web App may be unavailable or the deployment URL may be outdated.`,
           );
-          if (attempt === 0) {
+          if (attempt < retries) {
             await new Promise((resolve) => setTimeout(resolve, 700));
             continue;
           }
@@ -45,12 +42,10 @@ export function createSheetsAdapter({ url, key }) {
       } catch (e) {
         lastError = e;
         if (e && e.name === "AbortError") {
-          throw new Error("Google Sheets took too long to respond. Try again.");
+          throw new Error(`Google Sheets took too long to respond (${Math.round(timeoutMs / 1000)}s). Check the Apps Script Web App deployment.`);
         }
-        // Retry only transport/non-JSON failures. Do not repeat a valid Apps Script error
-        // such as an invalid action or access key.
         const retryable = /non-JSON response|Couldn't reach Google Sheets|Failed to fetch|NetworkError|Load failed/i.test(String(e && e.message));
-        if (attempt === 0 && retryable) {
+        if (attempt < retries && retryable) {
           await new Promise((resolve) => setTimeout(resolve, 700));
           continue;
         }
@@ -64,16 +59,18 @@ export function createSheetsAdapter({ url, key }) {
 
   return {
     kind: "sheets",
-    ping: () => call("ping"),
-    authChallenge: (arg) => call("authChallenge", arg),
-    authLogin: (arg) => call("authLogin", arg),
-    authLogout: () => call("authLogout"),
-    authSyncStaff: (arg) => call("authSyncStaff", arg),
-    authStatus: () => call("authStatus"),
-    installationStatus: () => call("installationStatus"),
-    initialize: (arg) => call("initialize", arg, { timeoutMs: 120000 }),
-    authDevices: () => call("authDevices"),
-    authRevokeDevice: (arg) => call("authRevokeDevice", arg),
+    // Connectivity/auth probes must fail fast. They must never make the operator wait through
+    // two 45-second attempts when the Apps Script deployment is stale or unavailable.
+    ping: () => call("ping", {}, { timeoutMs: 8000, retries: 0 }),
+    authChallenge: (arg) => call("authChallenge", arg, { timeoutMs: 12000, retries: 0 }),
+    authLogin: (arg) => call("authLogin", arg, { timeoutMs: 12000, retries: 0 }),
+    authLogout: () => call("authLogout", {}, { timeoutMs: 8000, retries: 0 }),
+    authSyncStaff: (arg) => call("authSyncStaff", arg, { timeoutMs: 15000, retries: 0 }),
+    authStatus: () => call("authStatus", {}, { timeoutMs: 8000, retries: 0 }),
+    installationStatus: () => call("installationStatus", {}, { timeoutMs: 12000, retries: 0 }),
+    initialize: (arg) => call("initialize", arg, { timeoutMs: 120000, retries: 0 }),
+    authDevices: () => call("authDevices", {}, { timeoutMs: 12000, retries: 0 }),
+    authRevokeDevice: (arg) => call("authRevokeDevice", arg, { timeoutMs: 12000, retries: 0 }),
     bootstrap: (opts) => call("bootstrap", opts || {}),
     saveProduct: (arg) => call("saveProduct", arg),
     deleteProduct: (arg) => call("deleteProduct", arg),
@@ -94,6 +91,6 @@ export function createSheetsAdapter({ url, key }) {
     backupRestore: (arg) => call("backupRestore", arg, { timeoutMs: 180000 }),
     auditAppend: (arg) => call("auditAppend", arg),
     status: () => ({ mode: "sheets", online: navigator.onLine, pending: 0 }),
-    exportData: async () => null, // data lives in the sheet in this mode
+    exportData: async () => null,
   };
 }
