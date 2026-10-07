@@ -16,6 +16,8 @@ const PIN_MAX_FAILED = 5;
 const PIN_LOCK_MS = 15 * 60 * 1000;
 const DEVICE_KEY = "freshmart.auth.device";
 const CRYPTO_KEY = "staff.crypto.key.v1";
+const SERVER_SYNC_KEY = "staff.server-sync.pending.v1";
+let serverSyncTimer = null;
 
 function localDeviceId() {
   let id = localStorage.getItem(DEVICE_KEY);
@@ -167,6 +169,7 @@ async function load() {
 export async function initStaff() {
   if (!ready) ready = load();
   await ready;
+  if (localStorage.getItem(SERVER_SYNC_KEY) && navigator.onLine) scheduleServerStaffSync();
   return currentStaff();
 }
 
@@ -490,7 +493,42 @@ function render() {
   root.querySelectorAll("[data-toggle]").forEach(b=>b.onclick=()=>toggleUser(getUser(b.dataset.toggle)));
 }
 
-async function syncServerStaffIfInitialized(){try{const {authStatus}=await import("./auth.js");if((await authStatus()).initialized)await syncServerStaff();}catch(e){toast("Local staff change saved, but server staff sync failed: "+(e.message||e),"warn");}}
+async function syncServerStaffIfInitialized() {
+  if (!navigator.onLine) return false;
+  const cfg = (() => { try { return JSON.parse(localStorage.getItem("pos.backend.v1") || "{}"); } catch { return {}; } })();
+  if (!cfg.url || cfg.mode === "local") return false;
+  try {
+    const { authStatus } = await import("./auth.js");
+    if (!(await authStatus()).initialized) return false;
+    await syncServerStaff();
+    localStorage.removeItem(SERVER_SYNC_KEY);
+    if (serverSyncTimer) { clearTimeout(serverSyncTimer); serverSyncTimer = null; }
+    return true;
+  } catch (e) {
+    // Staff is already durable in IndexedDB. Keep server reconciliation pending and retry
+    // silently; never interrupt the operator with a sync toast.
+    localStorage.setItem(SERVER_SYNC_KEY, new Date().toISOString());
+    if (!serverSyncTimer) {
+      serverSyncTimer = setTimeout(() => {
+        serverSyncTimer = null;
+        syncServerStaffIfInitialized();
+      }, 30000);
+    }
+    return false;
+  }
+}
+
+function scheduleServerStaffSync() {
+  clearTimeout(serverSyncTimer);
+  serverSyncTimer = setTimeout(() => {
+    serverSyncTimer = null;
+    syncServerStaffIfInitialized();
+  }, 1500);
+}
+
+window.addEventListener("online", () => {
+  if (localStorage.getItem(SERVER_SYNC_KEY)) scheduleServerStaffSync();
+});
 
 async function openServerAuth() {
   if (!can("staff")) return toast("Only Admin users can configure server authentication.", "error");
@@ -534,7 +572,7 @@ async function openEditor(existing=null) {
         await persist();
         m.close(); render();
         toast("Staff account updated");
-        syncServerStaffIfInitialized();
+        scheduleServerStaffSync();
       } else {
         const pin=m.$("#sfPin").value.trim();
         if(!/^\d{4,12}$/.test(pin)){btn.disabled=false;return toast("Use a numeric PIN with 4–12 digits.","error");}
@@ -559,14 +597,14 @@ async function openEditor(existing=null) {
 async function resetPin(user) {
   if(!can("staff") || !user) return toast("Only Admin users can reset staff PINs.","error");
   const m=openModal({title:"Reset staff PIN",sub:user.name, size:"sm",body:`<div class="field"><label>New PIN</label><input class="input" id="newStaffPin" type="password" inputmode="numeric" maxlength="12" placeholder="4–12 digits"></div>`,footer:`<button class="btn btn-outline" data-close>Cancel</button><button class="btn btn-primary" id="pinSave">${icon("check")} Reset PIN</button>`});
-  m.$("#pinSave").onclick=async()=>{const pin=m.$("#newStaffPin").value.trim();if(!/^\d{4,12}$/.test(pin))return toast("Use a numeric PIN with 4–12 digits.","error");const hashes=await makePin(pin);Object.assign(user,hashes,{mustChangePin:true,failedAttempts:0,lockedUntil:null,lastOnlineAuthAt:null,updatedAt:now()});await persist();await syncServerStaffIfInitialized();m.close();toast(`PIN reset for ${user.name}`);render();};
+  m.$("#pinSave").onclick=async()=>{const pin=m.$("#newStaffPin").value.trim();if(!/^\d{4,12}$/.test(pin))return toast("Use a numeric PIN with 4–12 digits.","error");const hashes=await makePin(pin);Object.assign(user,hashes,{mustChangePin:true,failedAttempts:0,lockedUntil:null,lastOnlineAuthAt:null,updatedAt:now()});await persist();scheduleServerStaffSync();m.close();toast(`PIN reset for ${user.name}`);};
 }
 
 async function toggleUser(user) {
   if(!can("staff") || !user || user.id===currentId) return;
   const action=user.active?"Deactivate":"Activate";
   if(!(await confirmDialog({title:`${action} staff account?`,message:`${action} ${user.name}'s POS sign-in account?`,confirmText:action,danger:user.active})))return;
-  user.active=!user.active;user.updatedAt=now();await persist();await syncServerStaffIfInitialized();render();toast(`${user.name} is now ${user.active?"active":"inactive"}`);
+  user.active=!user.active;user.updatedAt=now();await persist();scheduleServerStaffSync();render();toast(`${user.name} is now ${user.active?"active":"inactive"}`);
 }
 
 export async function mount(el) { root=el; await initStaff(); render(); }

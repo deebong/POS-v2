@@ -20,6 +20,7 @@ import * as reports from "./reports.js";
 import * as loyalty from "./loyalty.js";
 import * as staff from "./staff.js";
 import { initStaff, currentStaff, loginStaff, switchOperator, openOperatorMenu, can, refreshStaffSession } from "./staff.js";
+import { clearAuthToken } from "./auth.js";
 import { openScanner } from "./scanner.js";
 import * as settings from "./settings.js";
 import { applySharedStoreConfigFromUrl, checkInstallation, showInstallationWizard } from "./installation.js";
@@ -153,7 +154,20 @@ function renderSync() {
     const pending = st.pending || 0;
     if (st.syncing || m.syncing) { pill.classList.add("busy"); txt.textContent = pending ? `Syncing ${pending}…` : "Syncing…"; }
     else if (!navigator.onLine) { pill.classList.add("offline"); txt.textContent = pending ? `Offline · ${pending} to sync` : "Offline"; bannerKind = "warn"; bannerHtml = `${icon("wifiOff")}<span><b>You’re offline.</b> Keep selling — everything is saved on this PC and will sync to Google Sheets automatically when the internet is back.</span>`; }
-    else if (st.lastError) { pill.classList.add("err"); txt.textContent = pending ? `Sync issue · ${pending} waiting` : "Sync issue"; bannerKind = "err"; bannerHtml = `${icon("alert")}<span><b>Couldn’t sync with Google Sheets.</b> ${esc(st.lastError)} Your data is safe on this PC.</span><button class="btn btn-sm btn-outline" id="bnRetry">Retry</button><a class="btn btn-sm btn-ghost" href="#/settings">Settings</a>`; }
+    else if (st.authRequired) {
+      pill.classList.add("offline");
+      txt.textContent = pending ? `${pending} waiting` : "Sign-in needed";
+      bannerKind = "warn";
+      bannerHtml = `${icon("alert")}<span><b>Google Sheets sign-in has expired.</b> Your data is safe on this PC. Sign in again to resume background sync.</span><button class="btn btn-sm btn-primary" id="bnSignIn">Sign in</button>`;
+    }
+    else if (st.lastError) {
+      // Transient background sync failures are deliberately quiet. The queue remains durable
+      // and hybrid-adapter retries automatically; only an expired authentication session needs
+      // an operator-facing banner because it requires a sign-in action.
+      pill.classList.add("offline");
+      txt.textContent = pending ? `${pending} waiting` : "Sync paused";
+      pill.title = "Google Sheets sync is retrying in the background. Your data is safe on this PC.";
+    }
     else if (pending) { pill.classList.add("busy"); txt.textContent = `${pending} to sync`; }
     else { pill.classList.add("ok"); txt.textContent = `Synced ${hhmm(st.lastSyncAt)}`; }
     pill.title = `Offline-first: saved on this PC, synced with Google Sheets.${st.lastSyncAt ? " Last sync " + new Date(st.lastSyncAt).toLocaleString() : ""} Click to sync now.`;
@@ -164,6 +178,20 @@ function renderSync() {
   }
   banner.className = `banner ${bannerKind ? "banner-" + bannerKind : "hidden"}`;
   banner.innerHTML = bannerHtml;
+  const signIn = $("#bnSignIn");
+  if (signIn) signIn.onclick = async () => {
+    signIn.disabled = true;
+    clearAuthToken();
+    try {
+      const { logoutStaff } = await import("./staff.js");
+      await logoutStaff();
+    } catch {}
+    renderOperator();
+    await loginStaff();
+    renderOperator();
+    await refreshData();
+    renderSync();
+  };
   const retry = $("#bnRetry");
   if (retry) retry.onclick = async () => { await refreshData(); renderSync(); if (getConfig().mode === "sheets" && !state.meta.error) navigate(); };
 }
@@ -276,7 +304,7 @@ async function init() {
       await loadAll();
     } catch (e) {
       console.error(e);
-      if (getConfig().mode === "hybrid") toast(e.message, "error");
+      // Hybrid mode is offline-first: represent sync failures in the single status/banner state.
     }
   })();
   if (!currentStaff()) { await loginStaff(); renderOperator(); }

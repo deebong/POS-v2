@@ -47,10 +47,12 @@ export async function createHybridAdapter(cfg) {
   // A different sheet was connected and nothing is waiting to be sent: start from a clean download.
   if (snapshot && snapshot.url !== cfg.url && !outbox.length && !applied.length) snapshot = null;
 
-  const status = { syncing: false, lastError: null };
+  const status = { syncing: false, lastError: null, authRequired: false };
   let running = null;
   let again = null;
   let pushTimer = null;
+  let retryTimer = null;
+  let retryDelayMs = 10000;
   let disposed = false;
 
   const newTempId = () => {
@@ -103,6 +105,16 @@ export async function createHybridAdapter(cfg) {
   function schedulePush() {
     clearTimeout(pushTimer);
     pushTimer = setTimeout(() => sync({ pull: false }).then(notify), 1200);
+  }
+
+  function scheduleRetry() {
+    if (disposed || !navigator.onLine || retryTimer || status.authRequired) return;
+    const delay = retryDelayMs;
+    retryDelayMs = Math.min(retryDelayMs * 2, 5 * 60 * 1000);
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      sync({ pull: false }).then(notify);
+    }, delay);
   }
 
   /** Applies a change locally, queues it, and saves the queue to disk before reporting success. */
@@ -190,13 +202,22 @@ export async function createHybridAdapter(cfg) {
         if (changed) view = rebuild();
         meta.lastSyncAt = new Date().toISOString();
         status.lastError = null;
+        status.authRequired = false;
+        retryDelayMs = 10000;
+        clearTimeout(retryTimer);
+        retryTimer = null;
         await persist(pull ? ["snapshot", "outbox", "applied", "meta"] : ["meta"]);
         const current = engine.bootstrap(view, { days: HISTORY_DAYS });
         return { changed, data: current };
       } catch (e) {
         status.lastError = e.message || "Sync failed";
+        status.authRequired = /Authentication required or session expired|Invalid access key/i.test(status.lastError);
+        if (status.authRequired) {
+          try { sessionStorage.removeItem("freshmart.auth.token"); } catch {}
+        }
         if (throwOnError) throw e;
-        return { error: status.lastError };
+        scheduleRetry();
+        return { error: status.lastError, authRequired: status.authRequired };
       } finally {
         status.syncing = false;
         emit();
@@ -214,7 +235,12 @@ export async function createHybridAdapter(cfg) {
     }
   }
 
-  const onOnline = () => sync({ pull: true }).then(notify);
+  const onOnline = () => {
+    retryDelayMs = 10000;
+    clearTimeout(retryTimer);
+    retryTimer = null;
+    sync({ pull: true }).then(notify);
+  };
   const onOffline = () => emit();
   window.addEventListener("online", onOnline);
   window.addEventListener("offline", onOffline);
@@ -328,6 +354,7 @@ export async function createHybridAdapter(cfg) {
       lastSyncAt: meta.lastSyncAt,
       lastPullAt: meta.lastPullAt,
       lastError: status.lastError,
+      authRequired: status.authRequired,
       log: log.slice(),
     }),
     async clearLog() {
@@ -363,6 +390,7 @@ export async function createHybridAdapter(cfg) {
     dispose() {
       disposed = true;
       clearTimeout(pushTimer);
+      clearTimeout(retryTimer);
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
     },

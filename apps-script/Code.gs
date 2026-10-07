@@ -122,7 +122,9 @@ var ACTIONS = {
 /* Staff authentication and server-side authorization                  */
 /* ------------------------------------------------------------------ */
 var AUTH_SESSION_MS = 12 * 60 * 60 * 1000;
-var AUTH_IDLE_MS = 30 * 60 * 1000;
+// Keep an authenticated POS counter usable through normal quiet periods. The absolute
+// session lifetime remains 12 hours; background sync requests refresh lastSeenAt.
+var AUTH_IDLE_MS = 12 * 60 * 60 * 1000;
 var AUTH_MAX_FAILED = 5;
 var AUTH_LOCK_MS = 15 * 60 * 1000;
 
@@ -343,8 +345,8 @@ function authSyncStaff_(req) {
   } else if (!setupCodeValid) {
     authRequireRole_(req, 'admin');
   }
-  var byId = {}, byUser = {};
-  rows.forEach(function (r) { byId[r.id] = r; byUser[r.username.toLowerCase()] = r; });
+  var byId = {}, byUser = {}, byRow = {}, updates = {}, newRows = [];
+  rows.forEach(function (r) { byId[r.id] = r; byUser[r.username.toLowerCase()] = r; byRow[r._row] = r; });
   var now = authNow_().toISOString();
   incoming.forEach(function (u) {
     if (!u.id || !u.username || !u.pinHash || !u.pinSalt) throw new Error('Each staff account must include its salted PIN verifier.');
@@ -355,18 +357,32 @@ function authSyncStaff_(req) {
       pinSalt: str_(u.pinSalt, 200), pinHash: str_(u.pinHash, 200), pinIterations: Number(u.pinIterations) || 120000,
       mustChangePin: !!u.mustChangePin, createdAt: existing ? existing.createdAt : now, updatedAt: now,
       lastLoginAt: existing ? existing.lastLoginAt : null,
-      // A valid one-time setup code is an explicit recovery operation. It must
-      // also clear server-side lockout state, otherwise the repaired credential
-      // remains unusable until the old lock timer expires.
       failedAttempts: setupCodeValid ? 0 : (existing ? Number(existing.failedAttempts) || 0 : 0),
       lockedUntil: setupCodeValid ? null : (existing ? existing.lockedUntil : null)
     };
     if (existing && existing.id !== data.id) throw new Error('Username is already assigned to another staff account.');
-    if (existing) writeRow_('Staff', existing._row, data); else appendRows_('Staff', [data]);
+    if (existing) updates[existing._row] = data; else newRows.push(data);
   });
+
+  // Batch existing-row updates into one SpreadsheetApp call. Staff changes happen
+  // frequently enough that one write per user makes Apps Script web requests unnecessarily slow.
+  var updateRows = Object.keys(updates).map(Number).sort(function (a, b) { return a - b; });
+  if (updateRows.length) {
+    var minRow = updateRows[0], maxRow = updateRows[updateRows.length - 1], matrix = [];
+    for (var rowNo = minRow; rowNo <= maxRow; rowNo++) {
+      matrix.push(objToRow_('Staff', updates[rowNo] || byRow[rowNo]));
+    }
+    sheet_('Staff').getRange(minRow, 1, matrix.length, SCHEMA.Staff.length).setValues(matrix);
+  }
+  appendRows_('Staff', newRows);
+
   PropertiesService.getScriptProperties().setProperty('AUTH_ENFORCED', 'true');
   if (setupCodeValid) PropertiesService.getScriptProperties().deleteProperty('AUTH_SETUP_CODE');
-  return { count: incoming.length, staff: staffRows_().map(function (u) { return { id: u.id, name: u.name, username: u.username, role: u.role, active: u.active, mustChangePin: u.mustChangePin }; }) };
+  return { count: incoming.length, staff: incoming.map(function (u) {
+    return { id: String(u.id), name: str_(u.name, 80), username: str_(u.username, 60).toLowerCase(),
+      role: ['admin','manager','cashier'].indexOf(u.role) >= 0 ? u.role : 'cashier',
+      active: u.active !== false, mustChangePin: !!u.mustChangePin };
+  }) };
 }
 
 function authStatus_() {

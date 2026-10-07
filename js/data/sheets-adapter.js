@@ -65,7 +65,9 @@ export function createSheetsAdapter({ url, key }) {
     authChallenge: (arg) => call("authChallenge", arg, { timeoutMs: 12000, retries: 0 }),
     authLogin: (arg) => call("authLogin", arg, { timeoutMs: 12000, retries: 0 }),
     authLogout: () => call("authLogout", {}, { timeoutMs: 8000, retries: 0 }),
-    authSyncStaff: (arg) => call("authSyncStaff", arg, { timeoutMs: 15000, retries: 0 }),
+    // Staff provisioning is background work. Apps Script can be cold or briefly busy;
+    // give it a real retry window instead of surfacing an 8–15s timeout to the operator.
+    authSyncStaff: (arg) => call("authSyncStaff", arg, { timeoutMs: 45000, retries: 2 }),
     authStatus: () => call("authStatus", {}, { timeoutMs: 8000, retries: 0 }),
     installationStatus: () => call("installationStatus", {}, { timeoutMs: 12000, retries: 0 }),
     initialize: (arg) => call("initialize", arg, { timeoutMs: 120000, retries: 0 }),
