@@ -11,7 +11,7 @@ import { receiptHtml } from "./receipt.js";
 import { importBulk, importProducts, loadAll, reloadLocal, saveSettings, scriptUpToDate, state } from "./store.js";
 import { THEME_PRESETS, applyTheme, normalizeColor } from "./theme.js";
 import { LANGUAGE_OPTIONS } from "./i18n.js";
-import { can } from "./staff.js";
+import { can, loginStaff } from "./staff.js";
 import { buildExport, demoPayload, invoiceLinesCsv, invoicesCsv, productsCsv, toPortable } from "./transfer.js";
 import {
   $, choiceDialog, confirmDialog, downloadFile, esc, fmtBytes, hydrateIcons, icon, timeAgo, toast,
@@ -831,6 +831,12 @@ export async function mount(el) {
     const btn = $("#setSave", el);
     btn.disabled = true;
     try {
+      if (getConfig().mode !== "local" && navigator.onLine && currentStatus()?.authRequired) {
+        const { clearAuthToken } = await import("./auth.js");
+        clearAuthToken();
+        const signed = await loginStaff(true);
+        if (!signed) throw new Error("Google Sheets sign-in is required to save store details.");
+      }
       const values = read();
       // Keep the select-backed setting explicit. This avoids FormData edge cases after
       // a live-preview change event and makes the persisted value authoritative.
@@ -853,6 +859,9 @@ export async function mount(el) {
       if (qrFile) { const data = await fileToDataUrl(qrFile); const res = await backend.uploadImage({ dataUrl:data, name:"upi-qr" }); values.upiQrUrl = res.url || data; }
       values.themeColor = normalizeColor(values.themeColor);
       const saved = await saveSettings(values);
+      if (getConfig().mode === "hybrid" && navigator.onLine) {
+        await backend.sync({ pull: false, throwOnError: true });
+      }
       if (saved.productLabelCode !== values.productLabelCode) {
         throw new Error("Product label code was not saved");
       }
