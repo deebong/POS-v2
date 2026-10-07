@@ -329,13 +329,20 @@ export async function showInstallationWizard(root = document.getElementById("vie
       if (!data.receiptLogoUrl && $("#iReceiptLogo",root)?.files?.[0]) data.receiptLogoUrl = await readLogo($("#iReceiptLogo",root).files[0], data.mode, "receipt-logo");
       if (!data.faviconUrl && $("#iFavicon",root)?.files?.[0]) data.faviconUrl = await readLogo($("#iFavicon",root).files[0], data.mode, "favicon");
       const settings={storeName:data.storeName,address:data.address,phoneNumbers:JSON.stringify(data.phoneNumbers),language:data.language,currency:data.currency,taxId:data.taxId,taxLabel:data.taxLabel,upiId:data.upiId,upiQrUrl:data.upiQrUrl||"",themeColor:data.themeColor,themeMode:data.themeMode,brandTagline:data.brandTagline,brandLogoMode:data.brandLogoMode,sidebarTheme:data.sidebarTheme,productImageMode:data.productImageMode,productLabelCode:data.productLabelCode,logoUrl:data.logoUrl||"",faviconUrl:data.faviconUrl||"",receiptLogoUrl:data.receiptLogoUrl||"",receiptFooter:data.receiptFooter};
-      // Re-check the authoritative backend before any cloud initialization.
+      // Never initialize a cloud backend blindly. A client may have lost browser data while
+      // the Google Sheet backend remains installed. Re-check immediately before initialization.
       if (data.mode !== "local" && /^https:\/\/script\.google\.com\/(a\/[^/]+\/)?macros\/s\/[^/]+\/exec$/.test(data.url)) {
         saveConfig({mode:data.mode,url:data.url,key:data.key});
         try {
           const liveStatus = await backend.installationStatus();
-          if (liveStatus?.installed) { existingBackend = true; existingStatus = liveStatus; }
-        } catch {}
+          if (liveStatus?.installed) {
+            existingBackend = true;
+            existingStatus = liveStatus;
+          }
+        } catch (probeError) {
+          // Continue only if the backend probe itself failed; initialize will still be protected
+          // by the explicit already-installed recovery below.
+        }
       }
       if (existingBackend) {
         saveConfig({mode:data.mode,url:data.url,key:data.key});
@@ -351,6 +358,8 @@ export async function showInstallationWizard(root = document.getElementById("vie
         try {
           await backend.initialize({setupCode:data.setupCode,installation:{id:uid(),language:data.language,mode:data.mode},settings,admin:{id:data.adminId,name:data.adminName,username:data.adminUsername,phone:data.phoneNumbers[0]?.number||"",role:"admin",active:true,...await makeVerifier(data.adminPin)}});
         } catch (error) {
+          // A backend can become installed between the probe and initialize. Treat the
+          // authoritative server response as a reconnect signal, not a fatal installation error.
           if (!/already installed/i.test(String(error?.message || error))) throw error;
           existingBackend = true;
           existingStatus = await backend.installationStatus();
@@ -364,6 +373,9 @@ export async function showInstallationWizard(root = document.getElementById("vie
         const {onlineLogin}=await import("./auth.js");
         await onlineLogin(data.adminUsername,data.adminPin);
       } else {
+        saveConfig({mode:"local",url:"",key:""});
+        await backend.startFresh();
+      }
       await saveSettings(settings);
       await provisionInitialAdmin({id:data.adminId,name:data.adminName,username:data.adminUsername,phone:data.phoneNumbers[0]?.number||"",pin:data.adminPin});
       setMarker({mode:data.mode});
