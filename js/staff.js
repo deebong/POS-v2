@@ -214,30 +214,44 @@ async function signIn(user, pin) {
   const localHash = await getPinVerifier(user, pin);
   if (!localHash || localHash !== user.pinHash) throw new Error("Incorrect PIN.");
   const cfg = (() => { try { return JSON.parse(localStorage.getItem("pos.backend.v1") || "{}"); } catch { return {}; } })();
+
+  // Local credential validation is authoritative for this offline-first counter. Establish
+  // the local session first; Apps Script authentication must never make the sign-in modal
+  // wait on network/cold-start latency.
+  currentId = user.id;
+  user.lastLoginAt = now();
+  user.updatedAt = now();
+  await persist();
+  await persistSession();
+
   if (navigator.onLine && cfg.mode && cfg.mode !== "local" && cfg.url) {
     const { onlineLogin } = await import("./auth.js");
-    try {
-      const serverUser = await onlineLogin(user.username, pin, {
-        pinHash: localHash,
-        pinSalt: user.pinSalt,
-        pinIterations: ITERATIONS,
-      });
-      if (serverUser.id !== user.id) throw new Error("Server staff identity does not match this counter.");
-      sessionStorage.removeItem("freshmart.auth.offline");
-    } catch (e) {
-      const message = String(e?.message || e || "");
-      // A backend outage must not stop an otherwise valid local operator from using
-      // this offline-first POS. Never fall back for credential, lockout, or identity errors.
-      const transportFailure =
-        /took too long to respond|Couldn't reach Google Sheets|Failed to fetch|NetworkError|Load failed|non-JSON response/i.test(message);
-      if (!transportFailure) throw e;
-      sessionStorage.setItem("freshmart.auth.offline", "1");
-      toast("Google Sheets is unavailable. Signed in offline; queued changes will sync when the connection returns.", "warn");
-    }
+    Promise.resolve().then(async () => {
+      try {
+        const serverUser = await onlineLogin(user.username, pin, {
+          pinHash: localHash,
+          pinSalt: user.pinSalt,
+          pinIterations: ITERATIONS,
+        });
+        if (serverUser.id !== user.id) throw new Error("Server staff identity does not match this counter.");
+        sessionStorage.removeItem("freshmart.auth.offline");
+        window.dispatchEvent(new CustomEvent("staff:server-auth", { detail: { ok: true } }));
+        window.dispatchEvent(new CustomEvent("sync:status"));
+      } catch (e) {
+        const message = String(e?.message || e || "");
+        sessionStorage.setItem("freshmart.auth.offline", "1");
+        window.dispatchEvent(new CustomEvent("staff:server-auth", {
+          detail: {
+            ok: false,
+            transport: /took too long to respond|Couldn't reach Google Sheets|Failed to fetch|NetworkError|Load failed|non-JSON response/i.test(message),
+            message,
+          },
+        }));
+        window.dispatchEvent(new CustomEvent("sync:status"));
+      }
+    });
   }
-  currentId = user.id;
-  user.lastLoginAt = now(); user.updatedAt = now();
-  await persist(); await persistSession();
+
   toast(`Signed in as ${user.name}`);
   return user;
 }
