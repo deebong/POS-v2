@@ -82,6 +82,7 @@ export function createSheetsAdapter({ url, key }) {
     checkout: (arg) => call("checkout", arg),
     voidSale: (arg) => call("voidSale", arg),
     getSale: (arg) => call("getSale", arg),
+    saveCustomer: (arg) => call("saveCustomer", arg),
     saveSettings: (arg) => call("saveSettings", arg),
     syncBatch: (arg) => call("syncBatch", arg, { timeoutMs: 180000 }),
     importBulk: (arg) => call("importBulk", arg, { timeoutMs: 280000 }),
