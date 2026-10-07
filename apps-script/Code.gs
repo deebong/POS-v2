@@ -204,7 +204,9 @@ function getAuthSetupCode() {
   return code;
 }
 
-function staffRows_() { ensureAll_(); return readTable_('Staff'); }
+// Authentication must not run the full schema/migration sweep. The POS is offline-first,
+// so a slow or busy non-auth sheet must never block the operator from signing in.
+function staffRows_() { return readTable_('Staff'); }
 function authSession_(token) {
   if (!token) return null;
   var hash = authSha_(token), rows = readTable_('AuthSessions'), now = Date.now(), found = null;
@@ -707,6 +709,8 @@ function settingsMap_() {
 /* ------------------------------------------------------------------ */
 
 function ping_() {
+  // Ping also performs the one-time sheet bootstrap/migration because the POS connection
+  // flow historically uses this call to prepare a new backend.
   ensureAll_();
   var ss = ss_();
   return { spreadsheetName: ss.getName(), spreadsheetUrl: ss.getUrl(), version: VERSION, features: ['sync', 'bulk', 'images', 'backups'] };
