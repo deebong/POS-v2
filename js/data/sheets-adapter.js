@@ -70,6 +70,8 @@ export function createSheetsAdapter({ url, key }) {
     authLogout: () => call("authLogout"),
     authSyncStaff: (arg) => call("authSyncStaff", arg),
     authStatus: () => call("authStatus"),
+    installationStatus: () => call("installationStatus"),
+    initialize: (arg) => call("initialize", arg, { timeoutMs: 120000 }),
     authDevices: () => call("authDevices"),
     authRevokeDevice: (arg) => call("authRevokeDevice", arg),
     bootstrap: (opts) => call("bootstrap", opts || {}),

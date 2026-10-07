@@ -219,6 +219,8 @@ export async function createHybridAdapter(cfg) {
   return {
     kind: "hybrid",
     ping: () => remote.ping(),
+    installationStatus: () => remote.installationStatus(),
+    initialize: (arg) => remote.initialize(arg),
     async bootstrap(opts) {
       if (!snapshot) {
         if (!navigator.onLine) {

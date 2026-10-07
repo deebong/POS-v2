@@ -81,6 +81,7 @@ export async function createLocalAdapter() {
     async startFresh() {
       db = { ...engine.emptyDb(), settings: { ...DEFAULT_SETTINGS } };
       await save();
+      return { fresh: true };
     },
   };
 }

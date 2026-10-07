@@ -32,7 +32,7 @@
 
 var API_KEY = ''; // optional shared secret, e.g. 'my-store-key-123'
 var SPREADSHEET_ID = ''; // leave empty when the script is opened from the sheet (Extensions ▸ Apps Script)
-var VERSION = '1.3.0';
+var VERSION = '1.4.0';
 var MAX_CART_LINES = 150;
 
 // Column schema: [name, type]  n = number, s = text, b = true/false, d = date-time
@@ -53,8 +53,8 @@ var SCHEMA = {
   AuditLog: [['id', 's'], ['at', 'd'], ['actorId', 's'], ['actorName', 's'], ['role', 's'], ['deviceId', 's'], ['action', 's'], ['module', 's'], ['detail', 's'], ['entity', 's'], ['level', 's'], ['prevHash', 's'], ['hash', 's']],
   SyncLog: [['opId', 's'], ['appliedAt', 'd'], ['deviceId', 's'], ['type', 's'], ['ok', 'b'], ['message', 's']]
 };
-var SETTING_KEYS = ['storeName', 'address', 'phone', 'taxId', 'currency', 'taxLabel', 'upiId', 'receiptFooter',
-  'themeColor', 'sidebarTheme', 'productImageMode', 'productLabelCode'];
+var SETTING_KEYS = ['storeName', 'address', 'phone', 'phoneNumbers', 'language', 'taxId', 'currency', 'taxLabel', 'upiId', 'upiQrUrl', 'receiptFooter',
+  'themeColor', 'sidebarTheme', 'productImageMode', 'productLabelCode', 'logoUrl', 'installationId', 'installationStatus', 'installedAt'];
 
 /* ------------------------------------------------------------------ */
 /* HTTP entry points                                                   */
@@ -93,6 +93,8 @@ var ACTIONS = {
   authLogout: authLogout_,
   authSyncStaff: authSyncStaff_,
   authStatus: authStatus_,
+  installationStatus: installationStatus_,
+  initialize: initializeInstallation_,
   auditAppend: auditAppend_,
   saveProduct: function (r) { return withLock_(function () { return saveProduct_(r); }); },
   deleteProduct: function (r) { return withLock_(function () { return deleteProduct_(r); }); },
@@ -133,6 +135,65 @@ function authSetupCode_() {
   if (!code) { code = Utilities.getUuid().replace(/-/g, '').slice(0, 16).toUpperCase(); props.setProperty('AUTH_SETUP_CODE', code); }
   return code;
 }
+
+function installationStatus_() {
+  var settings = settingsMap_();
+  var rows = staffRows_();
+  var installed = String(settings.installationStatus || '').toLowerCase() === 'installed' || rows.length > 0;
+  return {
+    installed: installed,
+    installationId: settings.installationId || '',
+    installedAt: settings.installedAt || '',
+    storeName: settings.storeName || '',
+    language: settings.language || 'en',
+    mode: settings.databaseMode || ''
+  };
+}
+
+function initializeInstallation_(req) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try {
+    var existingSettings = settingsMap_();
+    var rows = staffRows_();
+    if (String(existingSettings.installationStatus || '').toLowerCase() === 'installed' || rows.length) {
+      throw new Error('This POS backend is already installed. Use the existing staff login.');
+    }
+    var installation = req.installation || {}, admin = req.admin || {}, input = req.settings || {};
+    if (!installation.id || !admin.id || !admin.name || !admin.username || !admin.pinSalt || !admin.pinHash) throw new Error('Installation details are incomplete.');
+    if (String(req.setupCode || '') !== authSetupCode_()) throw new Error('Invalid one-time setup code. Generate it with getAuthSetupCode() in the Apps Script editor.');
+    if (!['admin'].includes(String(admin.role || ''))) throw new Error('The first account must be a Super Admin.');
+    var username = str_(admin.username, 60).toLowerCase();
+    if (!/^[a-z0-9._-]{3,60}$/.test(username)) throw new Error('Use 3–60 letters, numbers, dots, underscores or hyphens for the Super Admin username.');
+    var now = authNow_().toISOString();
+    var staff = {
+      id: String(admin.id), name: str_(admin.name, 80), username: username, phone: str_(admin.phone, 30),
+      role: 'admin', active: true, pinSalt: str_(admin.pinSalt, 200), pinHash: str_(admin.pinHash, 200),
+      pinIterations: Number(admin.pinIterations) || 120000, mustChangePin: false, createdAt: now, updatedAt: now,
+      lastLoginAt: null, failedAttempts: 0, lockedUntil: null
+    };
+    appendRows_('Staff', [staff]);
+    var merged = Object.assign({}, input, {
+      installationId: String(installation.id),
+      installationStatus: 'installed',
+      installedAt: now,
+      databaseMode: str_(installation.mode, 30)
+    });
+    var existing = {}; readTable_('Settings').forEach(function (r) { existing[r.key] = r._row; });
+    var list = [];
+    SETTING_KEYS.forEach(function (k) {
+      if (typeof merged[k] !== 'string') return;
+      var v = merged[k].trim().substring(0, 300);
+      if (existing[k]) writeRow_('Settings', existing[k], { key: k, value: v });
+      else list.push({ key: k, value: v });
+    });
+    appendRows_('Settings', list);
+    PropertiesService.getScriptProperties().setProperty('AUTH_ENFORCED', 'true');
+    return { installed: true, installationId: installation.id, installedAt: now, staff: { id: staff.id, name: staff.name, username: staff.username, role: staff.role } };
+  } finally {
+    lock.releaseLock();
+  }
+}
 // Run once in the Apps Script editor during production setup. The returned code is the one-time
 // bootstrap secret used by the POS Staff page to provision the existing local staff accounts.
 function getAuthSetupCode() { return authSetupCode_(); }
@@ -172,6 +233,7 @@ function requireActionAuth_(req) {
     uploadImage: 'manager', backupSetup: 'admin', backupNow: 'admin', backupVerify: 'admin',
     procurementSync: 'manager'
   };
+  if (action === 'installationStatus' || action === 'initialize') return null;
   if (action === 'auditAppend') return authRequireRole_(req, 'cashier');
   if (action === 'authDevices' || action === 'authRevokeDevice') return authRequireRole_(req, 'admin');
   if (action === 'syncBatch') {

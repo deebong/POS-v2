@@ -28,7 +28,7 @@ function localDeviceId() {
 
 export const ROLES = {
   admin: {
-    label: "Admin",
+    label: "Super Admin",
     description: "Full access including staff, settings and all operational controls.",
     permissions: ["pos","inventory","sales","customers","labels","procurement","returns","cashDrawer","closing","audit","lowStock","reports","loyalty","settings","staff"],
   },
@@ -167,6 +167,42 @@ export async function initStaff() {
   return currentStaff();
 }
 
+async function adoptServerStaff(serverUser, pin) {
+  const verifier = await makePin(String(pin));
+  const user = safeUser({
+    id: serverUser.id, name: serverUser.name, username: serverUser.username, phone: serverUser.phone || "",
+    role: serverUser.role, active: true, createdAt: now(), updatedAt: now(), lastLoginAt: now(),
+    ...verifier, mustChangePin: !!serverUser.mustChangePin, failedAttempts: 0, lockedUntil: null
+  });
+  users = [user, ...users.filter((u) => u.id !== user.id && u.username !== user.username)];
+  await persist();
+  currentId = user.id;
+  await persistSession();
+  return user;
+}
+
+export async function provisionInitialAdmin({ id = "", name, username, phone = "", pin }) {
+  await initStaff();
+  if (!/^\d{4,12}$/.test(String(pin || ""))) throw new Error("Super Admin PIN must contain 4–12 digits.");
+  const active = activeUsers();
+  if (users.length > 1 || (active.length && !(users.length === 1 && users[0].role === "admin" && users[0].name === "Anand Ibrahim"))) {
+    throw new Error("This device already has staff accounts. Installation cannot replace them.");
+  }
+  const target = users[0] || { id: id || uid() };
+  const verifier = await makePin(String(pin));
+  Object.assign(target, {
+    id: id || target.id, name: clean(name,80), username: clean(username,60).toLowerCase(), phone: clean(phone,30),
+    role: "admin", active: true, createdAt: target.createdAt || now(), updatedAt: now(), lastLoginAt: null,
+    ...verifier, mustChangePin: false, failedAttempts: 0, lockedUntil: null, lastOnlineAuthAt: null,
+  });
+  if (!target.name || !target.username) throw new Error("Super Admin name and username are required.");
+  users = [safeUser(target)];
+  currentId = target.id;
+  await persist();
+  await persistSession();
+  return target;
+}
+
 async function signIn(user, pin) {
   if (!user?.active) throw new Error("This staff account is inactive.");
   if (!(await verifyPin(user, pin))) throw new Error("Incorrect PIN.");
@@ -294,16 +330,22 @@ export async function loginStaff() {
          const bootstrapAdmins = users.filter((u) => u.active && u.role === "admin" && u.name === "Anand Ibrahim");
          if (bootstrapAdmins.length === 1 && users.length === 1) user = bootstrapAdmins[0];
        }
-       if (!user) { err.textContent = "Invalid username or PIN."; return; }
-      const btn = m.$("#loginGo"); btn.disabled = true; err.textContent = "";
+       const btn = m.$("#loginGo"); btn.disabled = true; err.textContent = "";
       repairUser = user;
       repairPin = pin;
       try {
+        if (!user && navigator.onLine && getConfig().mode !== "local") {
+          const { onlineLogin } = await import("./auth.js");
+          const serverUser = await onlineLogin(username, pin);
+          const signed = await adoptServerStaff(serverUser, pin);
+          completed = true; m.close(); resolve(signed); return;
+        }
+        if (!user) throw new Error("Invalid username or PIN.");
         const signed = await signIn(user, pin);
         completed = true; m.close(); resolve(signed);
       } catch (e) {
         const message = e.message || "Sign-in failed.";
-        if (/^Invalid username or PIN\.?$/.test(message) && getConfig().mode !== "local") {
+        if (user && /^Invalid username or PIN\.?$/.test(message) && getConfig().mode !== "local") {
           err.textContent = "Your local PIN is valid, but the Google Sheets staff credential is out of sync.";
           m.$("#loginRepair").style.display = "block";
           setTimeout(() => m.$("#loginSetupCode")?.focus(), 40);

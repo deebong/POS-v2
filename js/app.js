@@ -21,6 +21,7 @@ import * as staff from "./staff.js";
 import { initStaff, currentStaff, loginStaff, switchOperator, openOperatorMenu, can, refreshStaffSession } from "./staff.js";
 import { openScanner } from "./scanner.js";
 import * as settings from "./settings.js";
+import { applySharedStoreConfigFromUrl, checkInstallation, showInstallationWizard } from "./installation.js";
 import { findByCode, loadAll, refreshData, reloadLocal, state } from "./store.js";
 import { $, $$, esc, hydrateIcons, icon, toast } from "./ui.js";
 
@@ -103,7 +104,7 @@ function renderOperator() {
   const name = $("#cashierName");
   const role = $("#cashierRole");
   if (name) name.textContent = u?.name || "No operator";
-  if (role) role.textContent = `${u?.role ? ({ admin: "Admin", manager: "Manager", cashier: "Cashier" }[u.role] || u.role) : "Not signed in"} · Counter 1`;
+  if (role) role.textContent = `${u?.role ? ({ admin: "Super Admin", manager: "Manager", cashier: "Cashier" }[u.role] || u.role) : "Not signed in"} · Counter 1`;
 }
 function applyBrand() {
   applyTheme(state.settings);
@@ -238,8 +239,17 @@ async function init() {
     bootView.innerHTML = `<div class="boot-state"><div class="boot-card"><div class="boot-icon">${icon("sync")}</div><b>Preparing your counter</b><span>Loading products, stock and invoices. Please wait…</span></div></div>`;
     hydrateIcons(bootView);
   }
+  applySharedStoreConfigFromUrl();
   await initStaff();
   renderOperator();
+  const installation = await checkInstallation();
+  if (!installation.installed) {
+    await showInstallationWizard(bootView);
+    await new Promise((resolve) => {
+      window.addEventListener("installation:complete", () => { navigate(); resolve(); }, { once: true });
+    });
+    renderOperator();
+  }
   const dataReady = (async () => {
     try {
       await loadAll();
@@ -250,6 +260,7 @@ async function init() {
   })();
   if (!currentStaff()) { await loginStaff(); renderOperator(); }
   await dataReady;
+  navigate();
   $("#brandLogo").innerHTML = icon("bag");
   initPwa();
   await singleWindowGuard();
@@ -280,7 +291,6 @@ async function init() {
   renderSync();
   renderInstall();
   window.addEventListener("hashchange", navigate);
-  navigate();
   startPolling();
   if (getConfig().mode === "hybrid") refreshData();
 }

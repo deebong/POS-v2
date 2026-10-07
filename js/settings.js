@@ -10,6 +10,7 @@ import { promptInstall, pwa, requestPersist, storageInfo } from "./pwa.js";
 import { receiptHtml } from "./receipt.js";
 import { importBulk, importProducts, loadAll, reloadLocal, saveSettings, scriptUpToDate, state } from "./store.js";
 import { THEME_PRESETS, applyTheme, normalizeColor } from "./theme.js";
+import { LANGUAGE_OPTIONS } from "./i18n.js";
 import { can } from "./staff.js";
 import { buildExport, demoPayload, invoiceLinesCsv, invoicesCsv, productsCsv, toPortable } from "./transfer.js";
 import {
@@ -89,6 +90,7 @@ function busy(btn, on, label) {
   btn.disabled = on;
 }
 
+const fileToDataUrl = (file) => new Promise((resolve,reject) => { if (file.size > 3*1024*1024) return reject(new Error("Image is too large. Maximum size is 3 MB.")); const r=new FileReader(); r.onload=()=>resolve(String(r.result||"")); r.onerror=reject; r.readAsDataURL(file); });
 let cleanup = [];
 export function unmount() {
   cleanup.forEach((fn) => fn());
@@ -104,6 +106,10 @@ const listen = (name, fn) => {
 
 export async function mount(el) {
   unmount();
+  if (!can("settings")) {
+    el.innerHTML = '<div class="empty"><div class="big">🔒</div><h4>Super Admin access required</h4><p>Staff and Manager accounts cannot view or edit system settings.</p></div>';
+    return;
+  }
   const cfg = getConfig();
   let selected = cfg.mode;
 
@@ -131,10 +137,14 @@ export async function mount(el) {
           <div class="form-grid">
             <div class="field span-2"><label>Store name</label><input class="input" name="storeName" required value="${esc(state.settings.storeName)}" /></div>
             <div class="field span-2"><label>Address</label><input class="input" name="address" value="${esc(state.settings.address)}" /></div>
-            <div class="field"><label>Phone</label><input class="input" name="phone" value="${esc(state.settings.phone)}" /></div>
+            <div class="field span-2"><label>Phone numbers</label><div id="settingsPhones"></div><button class="btn btn-ghost" type="button" id="addSettingsPhone">+ Add another number</button><span class="hint">Each number can be assigned to Voice calls, WhatsApp, or both.</span></div>
+            <div class="field"><label>Language</label><select class="select" name="language" id="settingsLanguage"></select></div>
+            <div class="field"><label>Primary phone</label><input class="input" name="phone" value="${esc(state.settings.phone)}" /></div>
             <div class="field"><label>Tax / GST / VAT ID</label><input class="input" name="taxId" value="${esc(state.settings.taxId)}" /></div>
             <div class="field"><label>Currency symbol</label><input class="input" name="currency" maxlength="4" value="${esc(state.settings.currency)}" /></div>
             <div class="field"><label>Tax label</label><input class="input" name="taxLabel" maxlength="12" value="${esc(state.settings.taxLabel)}" placeholder="Tax, GST, VAT…" /></div>
+            <div class="field"><label>Store logo</label><input class="input" type="file" id="settingsLogo" accept="image/png,image/jpeg,image/webp,image/gif"><span class="hint">Upload a store logo. Super Admin only.</span></div>
+            <div class="field"><label>UPI QR image</label><input class="input" type="file" id="settingsUpiQr" accept="image/png,image/jpeg,image/webp,image/gif"><span class="hint">Optional custom QR image for payment display.</span></div>
             <div class="field span-2"><label>QR payment ID <span class="muted">(optional, e.g. UPI VPA)</span></label><input class="input" name="upiId" value="${esc(state.settings.upiId || "")}" placeholder="store@bank" /><span class="hint">Used to generate the “UPI / QR” payment code at checkout.</span></div>
             <div class="field span-2"><label>Product label code</label>
               <select class="select" name="productLabelCode">
@@ -724,6 +734,19 @@ export async function mount(el) {
 
   /* ================= store profile ================= */
   const form = $("#setForm", el);
+  const parsePhones = (v) => { try { const a = JSON.parse(v || "[]"); return Array.isArray(a) ? a : []; } catch { return []; } };
+  const phoneRows = parsePhones(state.settings.phoneNumbers);
+  if (!phoneRows.length) phoneRows.push({ number: state.settings.phone || "", type: "voice", label: "Store" });
+  const renderSettingsPhones = () => {
+    const box = $("#settingsPhones", el);
+    box.innerHTML = phoneRows.map((p,i) => `<div data-phone-row="${i}" style="display:grid;grid-template-columns:minmax(0,1fr) 150px 130px 40px;gap:8px;margin-bottom:8px"><input class="input sp-num" value="${esc(p.number||"")}" placeholder="+91 …"><select class="select sp-type"><option value="voice" ${p.type==="voice"?"selected":""}>Voice calls</option><option value="whatsapp" ${p.type==="whatsapp"?"selected":""}>WhatsApp</option><option value="both" ${p.type==="both"?"selected":""}>Voice + WhatsApp</option></select><input class="input sp-label" value="${esc(p.label||"")}" placeholder="Label"><button class="icon-btn" type="button" data-remove-sp="${i}">×</button></div>`).join("");
+  };
+  renderSettingsPhones();
+  $("#addSettingsPhone", el).onclick = () => { phoneRows.push({number:"",type:"voice",label:""}); renderSettingsPhones(); };
+  $("#settingsPhones", el).addEventListener("input", () => [...el.querySelectorAll("[data-phone-row]")].forEach((r) => { const i=Number(r.dataset.phoneRow); phoneRows[i]={number:r.querySelector(".sp-num").value,type:r.querySelector(".sp-type").value,label:r.querySelector(".sp-label").value}; }));
+  $("#settingsPhones", el).addEventListener("change", () => [...el.querySelectorAll("[data-phone-row]")].forEach((r) => { const i=Number(r.dataset.phoneRow); phoneRows[i]={number:r.querySelector(".sp-num").value,type:r.querySelector(".sp-type").value,label:r.querySelector(".sp-label").value}; }));
+  $("#settingsPhones", el).addEventListener("click", (e) => { const b=e.target.closest("[data-remove-sp]"); if(!b)return; phoneRows.splice(Number(b.dataset.removeSp),1); if(!phoneRows.length) phoneRows.push({number:"",type:"voice",label:""}); renderSettingsPhones(); });
+  $("#settingsLanguage",el).innerHTML = LANGUAGE_OPTIONS.map(x => `<option value="${x.id}" ${state.settings.language===x.id?"selected":""}>${esc(x.native)} — ${esc(x.label)}</option>`).join("");
   const read = () => Object.fromEntries(new FormData(form).entries());
   const preview = () => {
     const prev = state.settings;
@@ -775,6 +798,12 @@ export async function mount(el) {
       // Keep the select-backed setting explicit. This avoids FormData edge cases after
       // a live-preview change event and makes the persisted value authoritative.
       values.productLabelCode = $("[name=\"productLabelCode\"]", form).value;
+      values.phoneNumbers = JSON.stringify(phoneRows.filter((p) => String(p.number || "").trim()));
+      values.phone = phoneRows.find((p) => String(p.number || "").trim())?.number || "";
+      const logoFile = $("#settingsLogo", el)?.files?.[0];
+      const qrFile = $("#settingsUpiQr", el)?.files?.[0];
+      if (logoFile) { const data = await fileToDataUrl(logoFile); const res = await backend.uploadImage({ dataUrl:data, name:"store-logo" }); values.logoUrl = res.url || data; }
+      if (qrFile) { const data = await fileToDataUrl(qrFile); const res = await backend.uploadImage({ dataUrl:data, name:"upi-qr" }); values.upiQrUrl = res.url || data; }
       values.themeColor = normalizeColor(values.themeColor);
       const saved = await saveSettings(values);
       if (saved.productLabelCode !== values.productLabelCode) {

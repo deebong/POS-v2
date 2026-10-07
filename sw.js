@@ -1,7 +1,7 @@
 /* FreshMart POS service worker — makes the app installable and lets it start with no internet.
  * App files are pre-cached ("app shell"); your data lives in IndexedDB, not here.
  * Bump VERSION whenever any app-shell file changes. Updates are activated automatically. */
-const VERSION = "ci-0cda665db9c6";
+const VERSION = "ci-976a0cf2bf77";
 const CACHE = `freshmart-pos-${VERSION}`;
 const FONT_CACHE = "freshmart-pos-fonts";
 const IMG_CACHE = "freshmart-pos-images";
@@ -9,7 +9,7 @@ const ASSETS = [
   "index.html", "manifest.webmanifest", "css/styles.css", "css/pos-fixes.css", "css/custom-select.css", "css/procurement.css", "css/returns.css", "css/cash-drawer.css", "css/eod-closing.css", "css/audit-log.css", "css/low-stock.css", "css/reports.css", "css/loyalty.css", "css/staff.css",
   "vendor/jsQR.js", "vendor/qrcode.js", "apps-script/Code.gs", "apps-script/Procurement.gs", "apps-script/Returns.gs",
   "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png", "icons/apple-touch-icon.png", "icons/favicon-32.png",
-  "js/app.js", "js/analytics.js", "js/barcode.js", "js/custom-select.js", "js/procurement-router.js", "js/procurement.js", "js/returns-exchanges.js", "js/cash-drawer.js", "js/eod-closing.js", "js/audit-log.js", "js/low-stock.js", "js/reports.js", "js/loyalty.js", "js/staff.js", "js/customers.js", "js/ux-standards.js", "js/performance.js",
+  "js/app.js", "js/analytics.js", "js/barcode.js", "js/custom-select.js", "js/procurement-router.js", "js/procurement.js", "js/returns-exchanges.js", "js/cash-drawer.js", "js/eod-closing.js", "js/audit-log.js", "js/low-stock.js", "js/reports.js", "js/loyalty.js", "js/staff.js", "js/customers.js", "js/ux-standards.js", "js/installation.js", "js/i18n.js", "js/performance.js",
   "js/dashboard.js", "js/inventory.js", "js/labels.js", "js/media.js", "js/pos.js", "js/pwa.js", "js/qr.js", "js/receipt.js", "js/sales.js", "js/scanner.js", "js/settings.js", "js/store.js", "js/theme.js", "js/transfer.js", "js/ui.js",
   "js/data/backend.js", "js/data/engine.js", "js/data/folder-backup.js", "js/data/hybrid-adapter.js", "js/data/idb.js", "js/data/logic.js", "js/data/local-adapter.js", "js/data/sample.js", "js/data/sheets-adapter.js",
 ];
