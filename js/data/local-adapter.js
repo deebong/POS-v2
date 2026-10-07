@@ -59,6 +59,7 @@ export async function createLocalAdapter() {
     checkout: run((d, a) => engine.checkout(d, a)),
     voidSale: run((d, a) => engine.voidSale(d, a)),
     getSale: async (arg) => structuredClone(engine.getSale(db, arg || {})),
+    saveCustomer: run(engine.saveCustomer),
     saveSettings: run(engine.saveSettings),
     importBulk: run(engine.importBulk),
     // No cloud in this mode: the (already resized) photo is stored with the product on this PC.
