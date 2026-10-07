@@ -28,6 +28,9 @@ export function gstBillHtml(sale, items = [], settings = {}) {
   const company = settings.storeName || "Store";
   const phone = storePhones(settings);
   const currency = settings.currency || "₹";
+  // Use a numeric HTML entity for the Indian rupee in exported HTML/Word documents.
+  // This avoids legacy Word/HTML charset handling that can drop the ₹ glyph.
+  const currencyMarkup = currency === "₹" ? "&#8377;" : esc(currency);
   const taxLabel = settings.taxLabel || "GST";
   const customer = sale.customerName || "Walk-in customer";
 
@@ -35,15 +38,15 @@ export function gstBillHtml(sale, items = [], settings = {}) {
     <tr>
       <td><b>${esc(it.name || "")}</b><div class="muted">${esc(it.sku || "—")}</div></td>
       <td class="r">${esc(String(it.qty ?? ""))} ${esc(it.unit || "")}</td>
-      <td class="r">${currency}${num(it.price).toFixed(2)}</td>
-      <td class="r">${currency}${it.taxable.toFixed(2)}</td>
+      <td class="r">${currencyMarkup}${num(it.price).toFixed(2)}</td>
+      <td class="r">${currencyMarkup}${it.taxable.toFixed(2)}</td>
       <td class="r">${num(it.taxRate).toFixed(2)}%</td>
-      <td class="r">${currency}${it.tax.toFixed(2)}</td>
-      <td class="r"><b>${currency}${it.lineTotal.toFixed(2)}</b></td>
+      <td class="r">${currencyMarkup}${it.tax.toFixed(2)}</td>
+      <td class="r"><b>${currencyMarkup}${it.lineTotal.toFixed(2)}</b></td>
     </tr>`).join("");
 
   return `<!doctype html>
-<html><head><meta charset="utf-8"><title>GST Bill ${esc(sale.invoiceNo)}</title>
+<html><head><meta charset="utf-8"><meta http-equiv="Content-Type" content="text/html; charset=utf-8"><title>GST Bill ${esc(sale.invoiceNo)}</title>
 <style>
 *{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#fff;color:#111827;font-size:12px}
 .invoice{max-width:900px;margin:0 auto;padding:28px}.top{display:flex;justify-content:space-between;gap:24px;border-bottom:2px solid #111827;padding-bottom:16px}
@@ -61,13 +64,13 @@ ${settings.taxId ? `<div><b>${esc(taxLabel)}IN / Tax ID:</b> ${esc(settings.taxI
 <div class="title"><h2>TAX INVOICE / GST BILL</h2><div>Invoice: <b>${esc(sale.invoiceNo)}</b></div><div>Date: ${esc(new Date(sale.createdAt).toLocaleString())}</div><div>Status: ${esc(sale.status || "completed")}</div></div></section>
 
 <section class="grid"><div class="box"><h3>Bill To</h3><p><b>${esc(customer)}</b></p>${sale.customerAddress ? `<p>${esc(sale.customerAddress)}</p>` : ""}${sale.customerPhone ? `<p>Phone: ${esc(sale.customerPhone)}</p>` : ""}</div>
-<div class="box"><h3>Payment</h3><p>Method: <b>${esc(sale.paymentMethod === "upi" ? "UPI / QR" : sale.paymentMethod === "card" ? "Card" : "Cash")}</b></p><p>Amount paid: <b>${currency}${num(sale.amountPaid).toFixed(2)}</b></p>${num(sale.changeDue)>0 ? `<p>Change due: ${currency}${num(sale.changeDue).toFixed(2)}</p>` : ""}</div></section>
+<div class="box"><h3>Payment</h3><p>Method: <b>${esc(sale.paymentMethod === "upi" ? "UPI / QR" : sale.paymentMethod === "card" ? "Card" : "Cash")}</b></p><p>Amount paid: <b>${currencyMarkup}${num(sale.amountPaid).toFixed(2)}</b></p>${num(sale.changeDue)>0 ? `<p>Change due: ${currencyMarkup}${num(sale.changeDue).toFixed(2)}</p>` : ""}</div></section>
 
 <table><thead><tr><th>Item / SKU</th><th class="r">Qty</th><th class="r">Rate</th><th class="r">Taxable</th><th class="r">${esc(taxLabel)} %</th><th class="r">Tax</th><th class="r">Line total</th></tr></thead><tbody>${rows || '<tr><td colspan="7">No line items</td></tr>'}</tbody></table>
 
-<div class="summary"><div class="sum"><span>Subtotal</span><b>${currency}${num(sale.subtotal).toFixed(2)}</b></div><div class="sum"><span>Discount</span><b>− ${currency}${num(sale.discount).toFixed(2)}</b></div><div class="sum"><span>Taxable value</span><b>${currency}${taxableTotal.toFixed(2)}</b></div><div class="sum"><span>${esc(taxLabel)}</span><b>${currency}${taxTotal.toFixed(2)}</b></div><div class="sum grand"><span>Grand Total</span><span>${currency}${total.toFixed(2)}</span></div></div>
+<div class="summary"><div class="sum"><span>Subtotal</span><b>${currencyMarkup}${num(sale.subtotal).toFixed(2)}</b></div><div class="sum"><span>Discount</span><b>− ${currencyMarkup}${num(sale.discount).toFixed(2)}</b></div><div class="sum"><span>Taxable value</span><b>${currencyMarkup}${taxableTotal.toFixed(2)}</b></div><div class="sum"><span>${esc(taxLabel)}</span><b>${currencyMarkup}${taxTotal.toFixed(2)}</b></div><div class="sum grand"><span>Grand Total</span><span>${currencyMarkup}${total.toFixed(2)}</span></div></div>
 
-<div class="taxbox"><b>Tax summary</b><div class="muted">${rates.length ? rates.map(r => `${r.toFixed(2)}% ${esc(taxLabel)}: ${currency}${lines.filter(x=>num(x.taxRate)===r).reduce((s,x)=>s+x.tax,0).toFixed(2)}`).join(" · ") : "No GST/tax charged on this invoice."}</div></div>
+<div class="taxbox"><b>Tax summary</b><div class="muted">${rates.length ? rates.map(r => `${r.toFixed(2)}% ${esc(taxLabel)}: ${currencyMarkup}${lines.filter(x=>num(x.taxRate)===r).reduce((s,x)=>s+x.tax,0).toFixed(2)}`).join(" · ") : "No GST/tax charged on this invoice."}</div></div>
 <div class="footer">${settings.receiptFooter ? esc(settings.receiptFooter) : "Thank you for your business."}</div>
 </main></body></html>`;
 }
