@@ -860,7 +860,16 @@ export async function mount(el) {
       values.themeColor = normalizeColor(values.themeColor);
       const saved = await saveSettings(values);
       if (getConfig().mode === "hybrid" && navigator.onLine) {
-        await backend.sync({ pull: false, throwOnError: true });
+        try {
+          await backend.sync({ pull: false, throwOnError: true });
+        } catch (syncError) {
+          if (!/Authentication required or session expired|Invalid access key/i.test(String(syncError?.message || syncError))) throw syncError;
+          const { clearAuthToken } = await import("./auth.js");
+          clearAuthToken();
+          const signed = await loginStaff(true);
+          if (!signed) throw new Error("Google Sheets sign-in is required to sync store details.");
+          await backend.sync({ pull: false, throwOnError: true });
+        }
       }
       if (saved.productLabelCode !== values.productLabelCode) {
         throw new Error("Product label code was not saved");
