@@ -315,7 +315,7 @@ async function recoverConnection(m) {
   cm.$("#loginConnGo").onclick = async () => {
     const b=cm.$("#loginConnGo"), err=cm.$("#loginConnError");
     const url=cm.$("#loginSheetUrl").value.trim(), key=cm.$("#loginSheetKey").value.trim();
-    if (!/^https:\\/\\/script\\.google\\.com\\/(a\\/[^/]+\\/)?macros\\/s\\/[^/]+\\/exec$/.test(url)) { err.textContent="Enter the deployed Apps Script Web App URL ending in /exec."; return; }
+    if (!/^https:\/\/script\.google\.com\/(a\/[^/]+\/)?macros\/s\/[^/]+\/exec$/.test(url)) { err.textContent="Enter the deployed Apps Script Web App URL ending in /exec."; return; }
     b.disabled=true; err.textContent="";
     try {
       const { createSheetsAdapter } = await import("./data/sheets-adapter.js");
