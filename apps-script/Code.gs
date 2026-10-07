@@ -32,7 +32,7 @@
 
 var API_KEY = ''; // optional shared secret, e.g. 'my-store-key-123'
 var SPREADSHEET_ID = ''; // leave empty when the script is opened from the sheet (Extensions ▸ Apps Script)
-var VERSION = '1.4.0';
+var VERSION = '1.5.0';
 var MAX_CART_LINES = 150;
 
 // Column schema: [name, type]  n = number, s = text, b = true/false, d = date-time
@@ -40,11 +40,11 @@ var SCHEMA = {
   Products: [['id', 'n'], ['sku', 's'], ['barcode', 's'], ['name', 's'], ['category', 's'], ['emoji', 's'], ['unit', 's'],
     ['price', 'n'], ['cost', 'n'], ['taxRate', 'n'], ['stock', 'n'], ['reorderLevel', 'n'], ['isActive', 'b'],
     ['createdAt', 'd'], ['updatedAt', 'd'], ['imageUrl', 's']],
-  Sales: [['id', 'n'], ['invoiceNo', 's'], ['createdAt', 'd'], ['customerName', 's'], ['customerPhone', 's'],
+  Sales: [['id', 'n'], ['invoiceNo', 's'], ['createdAt', 'd'], ['customerName', 's'], ['customerPhone', 's'], ['customerAddress', 's'],
     ['subtotal', 'n'], ['discount', 'n'], ['tax', 'n'], ['total', 'n'], ['paymentMethod', 's'], ['amountPaid', 'n'],
     ['changeDue', 'n'], ['status', 's'], ['note', 's'], ['voidedAt', 'd'], ['clientRef', 's']],
   SaleItems: [['id', 'n'], ['saleId', 'n'], ['invoiceNo', 's'], ['productId', 'n'], ['sku', 's'], ['name', 's'],
-    ['emoji', 's'], ['unit', 's'], ['price', 'n'], ['qty', 'n'], ['taxRate', 'n'], ['lineSubtotal', 'n'], ['lineTax', 'n']],
+    ['emoji', 's'], ['unit', 's'], ['price', 'n'], ['cost', 'n'], ['qty', 'n'], ['taxRate', 'n'], ['lineSubtotal', 'n'], ['lineTax', 'n']],
   StockMovements: [['id', 'n'], ['createdAt', 'd'], ['productId', 'n'], ['sku', 's'], ['name', 's'], ['change', 'n'],
     ['reason', 's'], ['reference', 's']],
   Settings: [['key', 's'], ['value', 's']],
@@ -53,8 +53,8 @@ var SCHEMA = {
   AuditLog: [['id', 's'], ['at', 'd'], ['actorId', 's'], ['actorName', 's'], ['role', 's'], ['deviceId', 's'], ['action', 's'], ['module', 's'], ['detail', 's'], ['entity', 's'], ['level', 's'], ['prevHash', 's'], ['hash', 's']],
   SyncLog: [['opId', 's'], ['appliedAt', 'd'], ['deviceId', 's'], ['type', 's'], ['ok', 'b'], ['message', 's']]
 };
-var SETTING_KEYS = ['storeName', 'address', 'phone', 'phoneNumbers', 'language', 'taxId', 'currency', 'taxLabel', 'upiId', 'upiQrUrl', 'receiptFooter',
-  'themeColor', 'themeMode', 'sidebarTheme', 'productImageMode', 'productLabelCode', 'logoUrl', 'faviconUrl', 'receiptLogoUrl', 'installationId', 'installationStatus', 'installedAt'];
+var SETTING_KEYS = ['storeName', 'address', 'phone', 'phoneNumbers', 'language', 'taxId', 'currency', 'taxLabel', 'upiId', 'upiIds', 'upiQrUrl', 'receiptCustomerName', 'receiptCustomerPhone', 'brandTagline', 'receiptFooter',
+  'themeColor', 'themeMode', 'sidebarTheme', 'productImageMode', 'productLabelCode', 'logoUrl', 'brandLogoMode', 'faviconUrl', 'receiptLogoUrl', 'installationId', 'installationStatus', 'installedAt'];
 
 /* ------------------------------------------------------------------ */
 /* HTTP entry points                                                   */
@@ -578,7 +578,7 @@ function pubProduct_(p) {
 }
 function pubSale_(s) {
   return {
-    id: s.id, invoiceNo: s.invoiceNo, customerName: s.customerName || null, customerPhone: s.customerPhone || null,
+    id: s.id, invoiceNo: s.invoiceNo, customerName: s.customerName || null, customerPhone: s.customerPhone || null, customerAddress: s.customerAddress || null,
     subtotal: s.subtotal, discount: s.discount, tax: s.tax, total: s.total, paymentMethod: s.paymentMethod,
     amountPaid: s.amountPaid, changeDue: s.changeDue, status: s.status || 'completed', note: s.note || null,
     createdAt: s.createdAt, voidedAt: s.voidedAt || null
@@ -587,7 +587,7 @@ function pubSale_(s) {
 function pubItem_(i) {
   return {
     id: i.id, saleId: i.saleId, productId: i.productId || null, name: i.name, sku: i.sku, emoji: i.emoji || '🛒',
-    unit: i.unit, price: i.price, qty: i.qty, taxRate: i.taxRate, lineSubtotal: i.lineSubtotal, lineTax: i.lineTax
+    unit: i.unit, price: i.price, cost: i.cost, qty: i.qty, taxRate: i.taxRate, lineSubtotal: i.lineSubtotal, lineTax: i.lineTax
   };
 }
 
@@ -790,7 +790,7 @@ function checkout_(req) {
   var invoiceNo = 'INV-' + Utilities.formatDate(now, tz_(), 'yyyyMMdd') + '-' + pad_(saleId, 5);
   var sale = {
     id: saleId, invoiceNo: invoiceNo, createdAt: iso,
-    customerName: str_(req.customerName, 80), customerPhone: str_(req.customerPhone, 24),
+    customerName: str_(req.customerName, 80), customerPhone: str_(req.customerPhone, 24), customerAddress: str_(req.customerAddress, 300),
     subtotal: calc.subtotal, discount: calc.discount, tax: calc.tax, total: calc.total,
     paymentMethod: method, amountPaid: paid, changeDue: method === 'cash' ? r2_(paid - calc.total) : 0,
     status: 'completed', note: str_(req.note, 200), voidedAt: null, clientRef: ref
@@ -801,7 +801,7 @@ function checkout_(req) {
   var items = lines.map(function (l, i) {
     return {
       id: ++itemId, saleId: saleId, invoiceNo: invoiceNo, productId: l.p.id, sku: l.p.sku, name: l.p.name,
-      emoji: l.p.emoji, unit: l.p.unit, price: l.p.price, qty: l.qty, taxRate: l.p.taxRate,
+      emoji: l.p.emoji, unit: l.p.unit, price: l.p.price, cost: l.p.cost, qty: l.qty, taxRate: l.p.taxRate,
       lineSubtotal: calc.lines[i].lineSubtotal, lineTax: calc.lines[i].lineTax
     };
   });
@@ -970,7 +970,7 @@ function recordSale_(p, opId) {
   var saleId = lastId_('Sales') + 1;
   var sale = {
     id: saleId, invoiceNo: invoiceNo, createdAt: created,
-    customerName: str_(s.customerName, 80), customerPhone: str_(s.customerPhone, 24),
+    customerName: str_(s.customerName, 80), customerPhone: str_(s.customerPhone, 24), customerAddress: str_(s.customerAddress, 300),
     subtotal: r2_(Number(s.subtotal) || 0), discount: r2_(Number(s.discount) || 0), tax: r2_(Number(s.tax) || 0),
     total: r2_(Number(s.total) || 0), paymentMethod: method, amountPaid: r2_(Number(s.amountPaid) || 0),
     changeDue: r2_(Number(s.changeDue) || 0), status: 'completed', note: str_(s.note, 200), voidedAt: null, clientRef: ref
@@ -985,7 +985,7 @@ function recordSale_(p, opId) {
     var qty = r3_(Number(it.qty) || 0);
     rows.push({
       id: ++itemId, saleId: saleId, invoiceNo: invoiceNo, productId: prod ? prod.id : 0, sku: str_(it.sku, 40),
-      name: str_(it.name, 120), emoji: str_(it.emoji, 8), unit: str_(it.unit, 12), price: Number(it.price) || 0, qty: qty,
+      name: str_(it.name, 120), emoji: str_(it.emoji, 8), unit: str_(it.unit, 12), price: Number(it.price) || 0, cost: Number(it.cost) || 0, qty: qty,
       taxRate: Number(it.taxRate) || 0, lineSubtotal: Number(it.lineSubtotal) || 0, lineTax: Number(it.lineTax) || 0
     });
     if (!prod) { warnings.push('Unknown product ' + it.sku + ' — stock not updated'); return; }
@@ -1129,7 +1129,7 @@ function importBulk_(req) {
     var voided = s.status === 'voided';
     saleRows.push({
       id: id, invoiceNo: inv, createdAt: t.toISOString(),
-      customerName: str_(s.customerName, 80), customerPhone: str_(s.customerPhone, 24),
+      customerName: str_(s.customerName, 80), customerPhone: str_(s.customerPhone, 24), customerAddress: str_(s.customerAddress, 300),
       subtotal: r2_(Number(s.subtotal) || 0), discount: r2_(Number(s.discount) || 0), tax: r2_(Number(s.tax) || 0),
       total: r2_(Number(s.total) || 0),
       paymentMethod: ['cash', 'card', 'upi'].indexOf(s.paymentMethod) >= 0 ? s.paymentMethod : 'cash',
@@ -1516,7 +1516,9 @@ function procurementApply_(op){
     var nextPurchaseId=procurementLastId_('Purchases')+1;
     var purchase={id:nextPurchaseId,purchaseNo:procurementStr_(x.purchaseNo,40)||('PUR-'+Utilities.formatDate(new Date(),tz_(),'yyyyMMdd')+'-'+String(nextPurchaseId).padStart(5,'0')),supplierId:Number(x.supplierId)||0,supplierName:procurementStr_(x.supplierName,120),invoiceNo:procurementStr_(x.invoiceNo,60),createdAt:x.createdAt||now,receivedAt:x.receivedAt||now,status:'received',subtotal:procurementNum_(x.subtotal),tax:procurementNum_(x.tax),total:procurementNum_(x.total),notes:procurementStr_(x.notes,300)};
     procurementAppend_('Purchases',[purchase]);
-    var next=procurementLastId_('PurchaseItems'), rows=[]; (p.items||[]).forEach(function(q){rows.push({id:++next,purchaseId:purchase.id,productId:Number(q.productId)||0,sku:procurementStr_(q.sku,40),name:procurementStr_(q.name,120),unit:procurementStr_(q.unit,12),qty:procurementNum_(q.qty),unitCost:procurementNum_(q.unitCost),taxRate:procurementNum_(q.taxRate),lineSubtotal:procurementNum_(q.lineSubtotal),lineTax:procurementNum_(q.lineTax)});}); procurementAppend_('PurchaseItems',rows); return {purchaseId:purchase.id,purchaseNo:purchase.purchaseNo};
+    var next=procurementLastId_('PurchaseItems'), rows=[]; (p.items||[]).forEach(function(q){rows.push({id:++next,purchaseId:purchase.id,productId:Number(q.productId)||0,sku:procurementStr_(q.sku,40),name:procurementStr_(q.name,120),unit:procurementStr_(q.unit,12),qty:procurementNum_(q.qty),unitCost:procurementNum_(q.unitCost),taxRate:procurementNum_(q.taxRate),lineSubtotal:procurementNum_(q.lineSubtotal),lineTax:procurementNum_(q.lineTax)});}); procurementAppend_('PurchaseItems',rows);
+    rows.forEach(function(q){ var rr=findRows_('Products','id',q.productId); if(rr.length){ var prod=readRow_('Products',rr[0]); prod.cost=q.unitCost; prod.updatedAt=now; writeRow_('Products',prod._row,prod); } });
+    return {purchaseId:purchase.id,purchaseNo:purchase.purchaseNo};
   }
   throw new Error('Unknown procurement operation: '+op.type);
 }

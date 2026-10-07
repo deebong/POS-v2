@@ -24,20 +24,25 @@ export function dashboardData() {
 
   const top = new Map();
   const split = {};
+  let profit7 = 0, profit30 = 0, profitToday = 0;
+  const monthCutoff = Date.now() - 30 * 86400000;
+  const productCost = (it) => Number.isFinite(Number(it.cost)) ? Number(it.cost) : Number(state.all.find(p => p.id === it.productId || p.sku === it.sku)?.cost || 0);
   for (const s of completed) {
     const k = dayKey(s.createdAt);
     const b = buckets.get(k);
-    if (!b) continue;
-    b.revenue += s.total;
-    b.orders += 1;
+    if (b) { b.revenue += s.total; b.orders += 1; }
     const inWeek = k >= weekStart;
     if (inWeek) {
       const e = (split[s.paymentMethod] ||= { method: s.paymentMethod, revenue: 0, count: 0 });
       e.revenue += s.total;
       e.count += 1;
     }
-    for (const it of state.items.get(s.id) || []) {
-      b.items += isWeighed(it.unit) ? 1 : it.qty;
+    const saleItems = state.items.get(s.id) || [];
+    const saleDiscountRatio = Number(s.subtotal) > 0 ? Number(s.discount || 0) / Number(s.subtotal) : 0;
+    let saleProfit = 0;
+    for (const it of saleItems) {
+      if (b) b.items += isWeighed(it.unit) ? 1 : it.qty;
+      saleProfit += Number(it.lineSubtotal || 0) * (1 - saleDiscountRatio) - productCost(it) * Number(it.qty || 0);
       if (inWeek) {
         const t = top.get(it.name) || { name: it.name, emoji: it.emoji, unit: it.unit, qty: 0, revenue: 0 };
         t.qty += it.qty;
@@ -45,6 +50,10 @@ export function dashboardData() {
         top.set(it.name, t);
       }
     }
+    saleProfit = r2(saleProfit);
+    if (k >= weekStart) profit7 += saleProfit;
+    if (new Date(s.createdAt).getTime() >= monthCutoff) profit30 += saleProfit;
+    if (k === keys[13]) profitToday += saleProfit;
   }
 
   const all = keys.map((k) => {
@@ -73,7 +82,9 @@ export function dashboardData() {
       revenue: r2(series.reduce((s, d) => s + d.revenue, 0)),
       prevRevenue: r2(all.slice(0, 7).reduce((s, d) => s + d.revenue, 0)),
       orders: series.reduce((s, d) => s + d.orders, 0),
+      profit: r2(profit7),
     },
+    profit: { today: r2(profitToday), week: r2(profit7), month: r2(profit30) },
     series,
     topProducts: [...top.values()]
       .sort((a, b) => b.revenue - a.revenue)

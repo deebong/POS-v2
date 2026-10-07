@@ -863,3 +863,77 @@ html[data-theme="dark"] .input, html[data-theme="dark"] .select, html[data-theme
 html[data-theme="dark"] .swatch { border-color: var(--surface); }
 html[data-theme="dark"] .brand-logo-img { background: #fff; }
 html[data-theme="dark"] .modal-foot { background: var(--surface-2); }
+
+
+/* Essential POS polish: file inputs, backup rows, brand presentation, sticky settings action, receipt fitting */
+input[type="file"].input {
+  height: 48px;
+  padding: 5px 8px;
+  line-height: 36px;
+  vertical-align: middle;
+  overflow: hidden;
+}
+input[type="file"]::file-selector-button {
+  appearance: none;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text);
+  border-radius: 9px;
+  padding: 8px 12px;
+  margin-right: 10px;
+  height: 36px;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+  vertical-align: middle;
+}
+input[type="file"]::file-selector-button:hover { background: var(--surface); border-color: var(--primary); }
+.brand.custom-logo { display: block; padding: 4px 4px 18px; }
+.brand.custom-logo .brand-logo { width: 100%; height: 72px; background: transparent; box-shadow: none; border-radius: 0; }
+.brand.custom-logo .brand-logo-img { width: 100%; height: 72px; object-fit: contain; padding: 0; background: transparent; border-radius: 0; }
+.brand.custom-logo .brand-copy { display: none; }
+.brand-logo-img { max-width: 100%; }
+.status-row { min-width: 0; }
+.status-row > * { min-width: 0; }
+.status-row > div:nth-child(2) { overflow-wrap: anywhere; }
+.status-row > .field { width: 100%; max-width: 100%; }
+.status-row .field > div { min-width: 0; }
+.status-row .field .input { width: 100%; min-width: 0 !important; box-sizing: border-box; }
+.status-row .btn-row { min-width: 0; flex-wrap: wrap; }
+.preview-card { overflow: visible; }
+.settings-save-sticky { position: sticky; top: 0; z-index: 8; padding: 0 0 12px; background: var(--surface); }
+.settings-save-sticky .btn { box-shadow: var(--shadow); }
+.upi-row { display: grid; grid-template-columns: minmax(0,1.4fr) minmax(0,1fr) auto 42px; gap: 8px; align-items: center; margin-bottom: 8px; }
+.upi-default { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 13px; font-weight: 650; }
+.upi-default input { accent-color: var(--primary); }
+.cart-customer { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.cart-customer #custAddress { grid-column: 1 / -1; }
+.rc-logo { width: 100%; min-height: 44px; display: flex; justify-content: center; align-items: center; overflow: hidden; }
+.rc-logo img { display: block; width: auto; max-width: 88%; max-height: 72px; height: auto; object-fit: contain; margin: 0 auto; }
+.profit-summary-card .card-head { margin-bottom: 0; }
+.profit-periods { display: grid; grid-template-columns: repeat(3,1fr); gap: 1px; background: var(--border); border-top: 1px solid var(--border); }
+.profit-periods > div { background: var(--surface); padding: 18px 20px; }
+.profit-periods span { display:block; color:var(--muted); font-size:12px; font-weight:650; }
+.profit-periods b { display:block; margin-top:6px; font-size:22px; }
+@media (max-width: 800px) {
+  .upi-row { grid-template-columns: 1fr 1fr; }
+  .upi-default { justify-self: start; }
+  .cart-customer { grid-template-columns: 1fr; }
+  .cart-customer #custAddress { grid-column: auto; }
+  .profit-periods { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .status-row { display: grid; grid-template-columns: auto minmax(0,1fr); }
+  .status-row > .btn, .status-row > .btn-row, .status-row > .field { grid-column: 2; }
+  .settings-save-sticky { padding-bottom: 10px; }
+  .brand.custom-logo .brand-logo, .brand.custom-logo .brand-logo-img { height: 60px; }
+}
+
+.backup-verify-row { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: start; }
+.backup-verify-row > .field { grid-column: 2 / -1; width: 100%; margin-top: 4px !important; }
+.backup-verify-row > .btn-row { justify-self: end; }
+@media (max-width: 900px) {
+  .backup-verify-row { grid-template-columns: auto minmax(0,1fr); }
+  .backup-verify-row > .btn-row { grid-column: 2; justify-self: start; }
+  .backup-verify-row > .field { grid-column: 2; }
+}

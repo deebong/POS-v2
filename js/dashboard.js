@@ -117,6 +117,8 @@ export async function mount(el) {
         <div class="stat-value">${money(d.today.avgOrder)}</div><div class="stat-foot">${delta(d.today.avgOrder, d.yesterday.avgOrder)} vs yesterday (${money(d.yesterday.avgOrder)})</div></div>
     </div>
 
+    <div class="card profit-summary-card mt-16"><div class="card-head"><div><h3>Gross profit</h3><div class="sub">Sold price after discounts minus captured product cost</div></div><a class="btn btn-sm btn-ghost" href="#/reports">Detailed reports</a></div><div class="profit-periods"><div><span>Today</span><b>${money(d.profit.today)}</b></div><div><span>Last 7 days</span><b>${money(d.profit.week)}</b></div><div><span>Last 30 days</span><b>${money(d.profit.month)}</b></div></div></div>
+
     <div class="grid-2-1 mt-16">
       <div class="card">
         <div class="card-head"><div><h3>Sales overview</h3><div class="sub">Revenue · last 7 days</div></div>

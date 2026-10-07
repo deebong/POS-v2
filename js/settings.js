@@ -117,7 +117,6 @@ export async function mount(el) {
   <div class="view-enter">
     <div class="page-head">
       <div><h2>Settings</h2><p>Choose where your data lives, set up offline use, and edit the store details on receipts.</p></div>
-      <div class="actions"><button class="btn btn-primary" id="setSave">${icon("check")} Save store details</button></div>
     </div>
     <div class="settings-grid">
       <div style="display:grid;gap:16px;min-width:0">
@@ -135,7 +134,8 @@ export async function mount(el) {
         <form class="card card-pad" id="setForm" autocomplete="off">
           <div class="sec-head"><span class="stat-icon green">${icon("store", "lg")}</span><div><h3>Store profile</h3><div class="muted">Appears in the receipt header</div></div></div>
           <div class="form-grid">
-            <div class="field span-2"><label>Store name</label><input class="input" name="storeName" required value="${esc(state.settings.storeName)}" /></div>
+            <div class="field"><label>Store name</label><input class="input" name="storeName" required value="${esc(state.settings.storeName)}" /></div>
+            <div class="field"><label>Brand tagline / description</label><input class="input" name="brandTagline" value="${esc(state.settings.brandTagline || "Grocery POS")}" placeholder="Grocery POS" /></div>
             <div class="field span-2"><label>Address</label><input class="input" name="address" value="${esc(state.settings.address)}" /></div>
             <div class="field span-2"><label>Phone numbers</label><div id="settingsPhones"></div><button class="btn btn-ghost" type="button" id="addSettingsPhone">+ Add another number</button><span class="hint">Each number can be assigned to Voice calls, WhatsApp, or both.</span></div>
             <div class="field"><label>Language</label><select class="select" name="language" id="settingsLanguage"></select></div>
@@ -143,9 +143,10 @@ export async function mount(el) {
             <div class="field"><label>Tax / GST / VAT ID</label><input class="input" name="taxId" value="${esc(state.settings.taxId)}" /></div>
             <div class="field"><label>Currency symbol</label><input class="input" name="currency" maxlength="4" value="${esc(state.settings.currency)}" /></div>
             <div class="field"><label>Tax label</label><input class="input" name="taxLabel" maxlength="12" value="${esc(state.settings.taxLabel)}" placeholder="Tax, GST, VAT…" /></div>
-            <div class="field"><label>Store logo</label><input class="input" type="file" id="settingsLogo" accept="image/png,image/jpeg,image/webp,image/gif"><span class="hint">Upload a store logo. Super Admin only.</span></div>
+            <div class="field"><label>Branding style</label><select class="select" name="brandLogoMode"><option value="default" ${(state.settings.brandLogoMode||"default")==="default"?"selected":""}>Default icon + brand name + tagline</option><option value="custom" ${state.settings.brandLogoMode==="custom"?"selected":""}>Custom uploaded logo</option></select><span class="hint">Default uses the store name and tagline. Custom logo replaces that block and is fitted without distortion.</span></div>
+            <div class="field"><label>Store logo</label><input class="input" type="file" id="settingsLogo" accept="image/png,image/jpeg,image/webp,image/gif"><span class="hint">Upload a custom logo. It will be fitted automatically; the original file is retained in Drive.</span></div>
             <div class="field"><label>UPI QR image</label><input class="input" type="file" id="settingsUpiQr" accept="image/png,image/jpeg,image/webp,image/gif"><span class="hint">Optional custom QR image for payment display.</span></div>
-            <div class="field span-2"><label>QR payment ID <span class="muted">(optional, e.g. UPI VPA)</span></label><input class="input" name="upiId" value="${esc(state.settings.upiId || "")}" placeholder="store@bank" /><span class="hint">Used to generate the “UPI / QR” payment code at checkout.</span></div>
+            <div class="field span-2"><label>UPI payment IDs</label><div id="upiSettingsRows"></div><button class="btn btn-ghost" type="button" id="addUpiId">+ Add another UPI ID</button><span class="hint">Add multiple UPI IDs and mark exactly one as Default. The Default ID is used for new UPI QR payments.</span></div>
             <div class="field span-2"><label>Product label code</label>
               <select class="select" name="productLabelCode">
                 <option value="qr" ${state.settings.productLabelCode === "barcode" ? "" : "selected"}>QR code — use the product SKU</option>
@@ -153,6 +154,7 @@ export async function mount(el) {
               </select>
               <span class="hint">Controls product labels and the product-code print button. Invoice and UPI payment QR codes are unchanged.</span>
             </div>
+            <div class="field span-2"><label>Privacy on bill / receipt</label><div class="segmented full"><label class="seg"><input type="checkbox" name="receiptCustomerName" ${String(state.settings.receiptCustomerName)!=="false"?"checked":""}> Include customer name</label><label class="seg"><input type="checkbox" name="receiptCustomerPhone" ${String(state.settings.receiptCustomerPhone)!=="false"?"checked":""}> Include customer phone</label></div><span class="hint">Controls whether customer identity is printed on receipts and included in generated bill views.</span></div>
             <div class="field span-2"><label>Receipt footer message</label><textarea class="textarea" name="receiptFooter" rows="2">${esc(state.settings.receiptFooter)}</textarea></div>
           </div>
           <div class="sec-head" style="margin:22px 0 14px"><span class="stat-icon violet">${icon("palette", "lg")}</span><div><h3>Appearance</h3><div class="muted">Your store's colours and how products are pictured</div></div></div>
@@ -195,6 +197,7 @@ export async function mount(el) {
       </div>
 
       <div class="card preview-card">
+        <div class="settings-save-sticky"><button class="btn btn-primary btn-block" id="setSave">${icon("check")} Save store details</button></div>
         <div class="card-head"><div><h3>Receipt preview</h3><div class="sub">Updates as you type</div></div></div>
         <div class="card-body"><div class="receipt-stage" id="setPreview" style="border-radius:14px"></div></div>
       </div>
@@ -393,7 +396,7 @@ export async function mount(el) {
             <span>${cloud?.configured ? `Daily: 30 · Weekly: 12 · Monthly: 12. Last backup: ${esc(cloud.lastBackupAt ? timeAgo(cloud.lastBackupAt) : "not yet")}` : "The POS will create a private FreshMart POS Backups folder and install daily, weekly and monthly Apps Script triggers."}</span></div>
             <button class="btn btn-sm ${cloud?.configured ? "btn-outline" : "btn-primary"}" data-act="setupCloudBackup">${icon("settings", "sm")} ${cloud?.configured ? "Reconfigure" : "Enable"}</button>
           </div>
-          <div class="status-row"><span class="status-ic ${cloud?.lastBackupOk === true ? "ok" : ""}">${icon(cloud?.lastBackupOk === true ? "check" : "cloud", "sm")}</span>
+          <div class="status-row backup-verify-row"><span class="status-ic ${cloud?.lastBackupOk === true ? "ok" : ""}">${icon(cloud?.lastBackupOk === true ? "check" : "cloud", "sm")}</span>
             <div><b>Backup verification</b><span>${cloud?.lastBackupOk === true ? "The most recent cloud backup was verified." : cloud?.lastBackupError ? esc(cloud.lastBackupError) : "Run verification after setup or any manual backup."}</span></div>
             <div class="btn-row tight"><button class="btn btn-sm btn-soft" data-act="cloudBackupNow">${icon("download", "sm")} Back up now</button><button class="btn btn-sm btn-ghost" data-act="verifyCloudBackup">Verify</button></div>${can("staff") ? `<div class="field" style="margin-top:10px"><label>Admin restore from Drive backup</label><div style="display:flex;gap:8px"><input class="input" id="cloudRestoreId" placeholder="Paste Drive backup file ID" style="min-width:220px"><button class="btn btn-sm btn-outline" data-act="cloudRestore">${icon("undo","sm")} Restore</button></div><span class="hint">Restoring always creates a pre-restore snapshot first and invalidates active server sessions.</span></div>` : ""}
           </div>
@@ -753,7 +756,35 @@ export async function mount(el) {
   $("#settingsPhones", el).addEventListener("change", () => [...el.querySelectorAll("[data-phone-row]")].forEach((r) => { const i=Number(r.dataset.phoneRow); phoneRows[i]={number:r.querySelector(".sp-num").value,type:r.querySelector(".sp-type").value,label:r.querySelector(".sp-label").value}; }));
   $("#settingsPhones", el).addEventListener("click", (e) => { const b=e.target.closest("[data-remove-sp]"); if(!b)return; phoneRows.splice(Number(b.dataset.removeSp),1); if(!phoneRows.length) phoneRows.push({number:"",type:"voice",label:""}); renderSettingsPhones(); });
   $("#settingsLanguage",el).innerHTML = LANGUAGE_OPTIONS.map(x => `<option value="${x.id}" ${state.settings.language===x.id?"selected":""}>${esc(x.native)} — ${esc(x.label)}</option>`).join("");
-  const read = () => Object.fromEntries(new FormData(form).entries());
+  const read = () => {
+    const v = Object.fromEntries(new FormData(form).entries());
+    v.receiptCustomerName = form.querySelector('[name="receiptCustomerName"]')?.checked ? "true" : "false";
+    v.receiptCustomerPhone = form.querySelector('[name="receiptCustomerPhone"]')?.checked ? "true" : "false";
+    return v;
+  };
+  let upiRows = (() => {
+    try { const a = JSON.parse(state.settings.upiIds || "[]"); if (Array.isArray(a) && a.length) return a; } catch {}
+    return state.settings.upiId ? [{ id: state.settings.upiId, label: "Primary", enabled: true }] : [];
+  })();
+  const renderUpiRows = () => {
+    const box = $("#upiSettingsRows", el); if (!box) return;
+    if (!upiRows.length) upiRows = [{ id:"", label:"UPI 1", enabled:true }];
+    box.innerHTML = upiRows.map((u,i)=>`<div class="upi-row" data-upi-row="${i}">
+      <input class="input upi-id" value="${esc(u.id||"")}" placeholder="store@bank">
+      <input class="input upi-label" value="${esc(u.label||("UPI "+(i+1)))}" placeholder="Label">
+      <label class="upi-default"><input type="radio" name="upiDefault" value="${i}" ${u.enabled!==false?"checked":""}> Default</label>
+      <button class="icon-btn danger" type="button" data-remove-upi="${i}" aria-label="Remove">${icon("trash","sm")}</button>
+    </div>`).join("");
+    hydrateIcons(box);
+  };
+  const syncUpiRows = () => [...el.querySelectorAll("[data-upi-row]")].forEach(r=>{
+    const i=Number(r.dataset.upiRow); upiRows[i]={...upiRows[i],id:r.querySelector(".upi-id").value.trim(),label:r.querySelector(".upi-label").value.trim()};
+  });
+  renderUpiRows();
+  $("#addUpiId",el).onclick=()=>{syncUpiRows();upiRows.push({id:"",label:"UPI "+(upiRows.length+1),enabled:false});renderUpiRows();};
+  $("#upiSettingsRows",el).addEventListener("input",syncUpiRows);
+  $("#upiSettingsRows",el).addEventListener("change",(e)=>{syncUpiRows();if(e.target.name==="upiDefault"){const i=Number(e.target.value);upiRows.forEach((u,j)=>u.enabled=j===i);renderUpiRows();}});
+  $("#upiSettingsRows",el).addEventListener("click",e=>{const b=e.target.closest("[data-remove-upi]");if(!b)return;syncUpiRows();upiRows.splice(Number(b.dataset.removeUpi),1);if(upiRows.length&&!upiRows.some(u=>u.enabled!==false))upiRows[0].enabled=true;renderUpiRows();});
   const preview = () => {
     const prev = state.settings;
     state.settings = { ...prev, ...read() }; // money() formatting reads the live currency
@@ -804,13 +835,19 @@ export async function mount(el) {
       // Keep the select-backed setting explicit. This avoids FormData edge cases after
       // a live-preview change event and makes the persisted value authoritative.
       values.productLabelCode = $("[name=\"productLabelCode\"]", form).value;
+      values.brandLogoMode = $("[name=\"brandLogoMode\"]", form).value;
+      syncUpiRows();
+      const chosenUpi = upiRows.filter(u => String(u.id||"").trim()).map((u,i)=>({id:u.id,label:u.label||("UPI "+(i+1)),enabled:u.enabled!==false}));
+      if (chosenUpi.length && !chosenUpi.some(u=>u.enabled)) chosenUpi[0].enabled = true;
+      values.upiIds = JSON.stringify(chosenUpi);
+      values.upiId = chosenUpi.find(u=>u.enabled)?.id || "";
       values.phoneNumbers = JSON.stringify(phoneRows.filter((p) => String(p.number || "").trim()));
       values.phone = phoneRows.find((p) => String(p.number || "").trim())?.number || "";
       const logoFile = $("#settingsLogo", el)?.files?.[0];
       const receiptLogoFile = $("#settingsReceiptLogo", el)?.files?.[0];
       const faviconFile = $("#settingsFavicon", el)?.files?.[0];
       const qrFile = $("#settingsUpiQr", el)?.files?.[0];
-      if (logoFile) { const data = await fileToDataUrl(logoFile); const res = await backend.uploadImage({ dataUrl:data, name:"store-logo" }); values.logoUrl = res.url || data; }
+      if (logoFile) { const data = await fileToDataUrl(logoFile); const res = await backend.uploadImage({ dataUrl:data, name:"store-logo" }); values.logoUrl = res.url || data; values.brandLogoMode = "custom"; }
       if (receiptLogoFile) { const data = await fileToDataUrl(receiptLogoFile); const res = await backend.uploadImage({ dataUrl:data, name:"receipt-logo" }); values.receiptLogoUrl = res.url || data; }
       if (faviconFile) { const data = await fileToDataUrl(faviconFile); const res = await backend.uploadImage({ dataUrl:data, name:"favicon" }); values.faviconUrl = res.url || data; }
       if (qrFile) { const data = await fileToDataUrl(qrFile); const res = await backend.uploadImage({ dataUrl:data, name:"upi-qr" }); values.upiQrUrl = res.url || data; }
@@ -830,6 +867,7 @@ export async function mount(el) {
       btn.disabled = false;
     }
   };
+  $("#settingsLanguage",el).addEventListener("change",()=>{ window.dispatchEvent(new CustomEvent("language:preview",{detail:{language:$("#settingsLanguage",el).value}})); });
   $("#setSave", el).onclick = save;
   form.addEventListener("submit", (e) => {
     e.preventDefault();

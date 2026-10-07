@@ -33,14 +33,15 @@ export function receiptHtml(sale, items, settings = state.settings) {
       ? '<img src="' + esc(settings.receiptLogoUrl || settings.logoUrl) + '" alt="' + esc(settings.storeName || "Store") + '" />'
       : "🛒"}</div>
     <h2>${esc(settings.storeName)}</h2>
+    ${settings.brandTagline ? `<div class="rc-center rc-small">${esc(settings.brandTagline)}</div>` : ""}
     <div class="rc-center rc-small">${esc(settings.address)}</div>
     <div class="rc-center rc-small">${esc(settings.phone)}${settings.taxId ? " · " + esc(settings.taxId) : ""}</div>
     <hr />
     <div class="rc-row"><span>Invoice</span><b>${esc(sale.invoiceNo)}</b></div>
     <div class="rc-row"><span>Date</span><span>${esc(fmtDateTime(sale.createdAt))}</span></div>
     <div class="rc-row"><span>Cashier</span><span>${esc(CASHIER_NAME)} · ${esc(COUNTER_NAME)}</span></div>
-    ${sale.customerName ? `<div class="rc-row"><span>Customer</span><span>${esc(sale.customerName)}</span></div>` : ""}
-    ${sale.customerPhone ? `<div class="rc-row"><span>Phone</span><span>${esc(sale.customerPhone)}</span></div>` : ""}
+    ${String(settings.receiptCustomerName) !== "false" && sale.customerName ? `<div class="rc-row"><span>Customer</span><span>${esc(sale.customerName)}</span></div>` : ""}
+    ${String(settings.receiptCustomerPhone) !== "false" && sale.customerPhone ? `<div class="rc-row"><span>Phone</span><span>${esc(sale.customerPhone)}</span></div>` : ""}
     <hr />
     ${lines}
     <hr />

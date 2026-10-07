@@ -91,6 +91,19 @@ function transactionModal(sale, ownerEl) {
   hydrateIcons(m.$("#returnForm"));
   let mode="return";
   const form=m.$("#returnForm"), lines=[...form.querySelectorAll(".return-line")];
+  lines.forEach(row => {
+    const input = row.querySelector("[name=qty]");
+    const item = original.find(x => Number(x.id) === Number(row.dataset.item));
+    const max = item ? availableQty(sale, item) : 0;
+    input.addEventListener("input", () => {
+      let q = Number(input.value || 0);
+      if (!Number.isFinite(q) || q < 0) q = 0;
+      if (q > max) { q = max; input.value = String(max); toast(`Maximum returnable quantity is ${max}`, "warn"); }
+      if (!/^(kg|l)$/i.test(item?.unit || "") && q % 1 !== 0) { q = Math.floor(q); input.value = String(q); }
+      renderTotal();
+    });
+    input.addEventListener("blur", () => { let q=Number(input.value||0); if(q>max) q=max; if(q<0) q=0; if(!/^(kg|l)$/i.test(item?.unit||"")) q=Math.round(q); input.value=String(q); renderTotal(); });
+  });
   const renderTotal=()=>{let returned=0,replacement=0;lines.forEach(row=>{const item=original.find(x=>Number(x.id)===Number(row.dataset.item));const q=Number(row.querySelector("[name=qty]").value||0);returned+=q*Number(item.price)*(1+Number(item.taxRate||0)/100);if(mode==="exchange"){const p=productById(row.querySelector("[name=replacement]").value);const rq=Number(row.querySelector("[name=replacementQty]").value||0);if(p)replacement+=rq*Number(p.price)*(1+Number(p.taxRate||0)/100);}});const diff=replacement-returned;m.$("#returnTotal").innerHTML=`<span>Returned value <b>${money(returned)}</b></span>${mode==="exchange"?`<span>Replacement value <b>${money(replacement)}</b></span>`:""}<strong>${diff>0?`Collect ${money(diff)}`:diff<0?`Refund ${money(Math.abs(diff))}`:"No balance due"}</strong>`;};
   form.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>{mode=b.dataset.mode;form.querySelectorAll("[data-mode]").forEach(x=>x.classList.toggle("active",x===b));lines.forEach(row=>{row.querySelector(".replacement").disabled=mode!=="exchange";row.querySelector(".replacement-qty").disabled=mode!=="exchange";});m.$("#returnSave").innerHTML=`${icon("check")} Complete ${mode}`;hydrateIcons(m.$("#returnSave"));renderTotal();});
   form.addEventListener("input",renderTotal); form.addEventListener("change",renderTotal);

@@ -13,7 +13,7 @@ const DEFAULT_INSTALL = {
   storeName: "", address: "", phoneNumbers: [{ number: "", type: "voice", label: "" }],
   taxId: "", currency: "₹", taxLabel: "GST", upiId: "", upiQrUrl: "",
   themeColor: "#0f9d58", themeMode: "light", sidebarTheme: "light", productImageMode: "emoji", productLabelCode: "qr",
-  language: "ta-en", logoUrl: "", faviconUrl: "", receiptLogoUrl: "", receiptFooter: "Thank you for shopping with us! Please visit again.",
+  language: "ta-en", logoUrl: "", brandLogoMode: "default", brandTagline: "Grocery POS", faviconUrl: "", receiptLogoUrl: "", receiptFooter: "Thank you for shopping with us! Please visit again.",
   mode: DEFAULT_MODE, url: "", key: "",
 };
 
@@ -160,6 +160,8 @@ export async function showInstallationWizard(root = document.getElementById("vie
         <section class="install-step" data-step="4"><h3>5. Branding &amp; Appearance</h3><p class="muted">Make the POS match your store. These choices can be changed later by Super Admin.</p>
           <div class="install-brand-grid">
             <div class="install-brand-main">
+              <div class="field"><label>Brand name / tagline</label><div class="install-grid"><input class="input" id="iBrandTagline" value="${esc(data.brandTagline || "Grocery POS")}" placeholder="Grocery POS"></div><span class="hint">Shown below the store name when using the default icon + text branding.</span></div>
+              <div class="field"><label>Branding style</label><div class="segmented full install-segmented"><label class="seg"><input type="radio" name="iBrandLogoMode" value="default" ${data.brandLogoMode!=="custom"?"checked":""}>Default icon + text</label><label class="seg"><input type="radio" name="iBrandLogoMode" value="custom" ${data.brandLogoMode==="custom"?"checked":""}>Custom logo</label></div></div>
               <div class="field"><label>Brand colour</label><div class="swatches install-swatches" id="iSwatches"><button type="button" class="swatch" data-install-color="#0f9d58" title="Fresh green" style="--c:#0f9d58"></button><button type="button" class="swatch" data-install-color="#2563eb" title="Ocean blue" style="--c:#2563eb"></button><button type="button" class="swatch" data-install-color="#7c3aed" title="Royal purple" style="--c:#7c3aed"></button><button type="button" class="swatch" data-install-color="#db2777" title="Berry pink" style="--c:#db2777"></button><button type="button" class="swatch" data-install-color="#dc2626" title="Chilli red" style="--c:#dc2626"></button><button type="button" class="swatch" data-install-color="#ea580c" title="Saffron" style="--c:#ea580c"></button><button type="button" class="swatch" data-install-color="#0891b2" title="Teal" style="--c:#0891b2"></button><button type="button" class="swatch" data-install-color="#b45309" title="Masala brown" style="--c:#b45309"></button><button type="button" class="swatch" data-install-color="#1f2937" title="Charcoal" style="--c:#1f2937"></button></div>
                 <div class="install-color-row"><input class="input" id="iColorHex" value="${esc(data.themeColor || "#0f9d58")}" maxlength="7"><input id="iColor" type="color" value="${/^#[0-9a-f]{6}$/i.test(data.themeColor||"")?data.themeColor:"#0f9d58"}"></div>
                 <span class="hint">Choose a preset or any custom colour.</span>
@@ -242,6 +244,8 @@ export async function showInstallationWizard(root = document.getElementById("vie
     data.taxId=$("#iTaxId",root).value.trim(); data.taxLabel=$("#iTaxLabel",root).value.trim()||"GST";
     data.upiId=$("#iUpi",root).value.trim(); data.themeColor=/^#[0-9a-f]{6}$/i.test($("#iColorHex",root)?.value.trim()||"")?$("#iColorHex",root).value.trim():$("#iColor",root).value;
     data.themeMode=root.querySelector('input[name="iThemeMode"]:checked')?.value || "light";
+    data.brandTagline=$("#iBrandTagline",root)?.value.trim() || "Grocery POS";
+    data.brandLogoMode=root.querySelector('input[name="iBrandLogoMode"]:checked')?.value || "default";
     data.sidebarTheme=root.querySelector('input[name="iSidebarTheme"]:checked')?.value || "light";
     data.productLabelCode=$("#iLabelCode",root).value; data.productImageMode=$("#iImages",root).value; data.receiptFooter=$("#iFooter",root).value.trim();
     data.url=$("#iUrl",root).value.trim(); data.key=$("#iKey",root).value; data.setupCode=$("#iSetupCode",root)?.value.trim() || data.setupCode || "";
@@ -279,7 +283,7 @@ export async function showInstallationWizard(root = document.getElementById("vie
       if (!data.logoUrl && $("#iLogo",root)?.files?.[0]) data.logoUrl = await readLogo($("#iLogo",root).files[0], data.mode, "store-logo");
       if (!data.receiptLogoUrl && $("#iReceiptLogo",root)?.files?.[0]) data.receiptLogoUrl = await readLogo($("#iReceiptLogo",root).files[0], data.mode, "receipt-logo");
       if (!data.faviconUrl && $("#iFavicon",root)?.files?.[0]) data.faviconUrl = await readLogo($("#iFavicon",root).files[0], data.mode, "favicon");
-      const settings = { storeName:data.storeName,address:data.address,phoneNumbers:JSON.stringify(data.phoneNumbers),language:data.language,currency:data.currency,taxId:data.taxId,taxLabel:data.taxLabel,upiId:data.upiId,upiQrUrl:data.upiQrUrl||"",themeColor:data.themeColor,themeMode:data.themeMode,sidebarTheme:data.sidebarTheme,productImageMode:data.productImageMode,productLabelCode:data.productLabelCode,logoUrl:data.logoUrl||"",faviconUrl:data.faviconUrl||"",receiptLogoUrl:data.receiptLogoUrl||"",receiptFooter:data.receiptFooter };
+      const settings = { storeName:data.storeName,address:data.address,phoneNumbers:JSON.stringify(data.phoneNumbers),language:data.language,currency:data.currency,taxId:data.taxId,taxLabel:data.taxLabel,upiId:data.upiId,upiQrUrl:data.upiQrUrl||"",themeColor:data.themeColor,themeMode:data.themeMode,brandTagline:data.brandTagline,brandLogoMode:data.brandLogoMode,sidebarTheme:data.sidebarTheme,productImageMode:data.productImageMode,productLabelCode:data.productLabelCode,logoUrl:data.logoUrl||"",faviconUrl:data.faviconUrl||"",receiptLogoUrl:data.receiptLogoUrl||"",receiptFooter:data.receiptFooter };
       if (data.mode !== "local") {
         saveConfig({ mode:data.mode, url:data.url, key:data.key });
         await backend.initialize({ setupCode:data.setupCode, installation:{ id:uid(), language:data.language, mode:data.mode }, settings, admin:{ id:data.adminId, name:data.adminName, username:data.adminUsername, phone:data.phoneNumbers[0]?.number||"", role:"admin", active:true, ...await makeVerifier(data.adminPin) } });

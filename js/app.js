@@ -7,6 +7,7 @@ import * as labels from "./labels.js";
 import * as pos from "./pos.js";
 import { initPwa, promptInstall, pwa, renderInstallBar } from "./pwa.js";
 import { applyTheme } from "./theme.js";
+import { applyLanguage } from "./i18n.js";
 import * as sales from "./sales.js";
 import * as customers from "./customers.js";
 import * as procurement from "./procurement.js";
@@ -90,6 +91,7 @@ async function navigate() {
   current = { name: key, mod: route.mod, view, seq };
   try {
     await route.mod.mount(view);
+    applyLanguage(view, state.settings.language);
     if (seq !== navigationSeq || current?.view !== view || location.hash.replace(/^#\/?/, "").split("?")[0] !== key) return;
     auditLog.recordAudit({ action: "Viewed page", module: route.title, detail: `Opened ${route.title}` });
   } catch (e) {
@@ -106,17 +108,27 @@ function renderOperator() {
   if (name) name.textContent = u?.name || "No operator";
   if (role) role.textContent = `${u?.role ? ({ admin: "Super Admin", manager: "Manager", cashier: "Cashier" }[u.role] || u.role) : "Not signed in"} · Counter 1`;
 }
+function applyFavicon() {
+  const link = document.querySelector('link[rel="icon"]');
+  if (!link) return;
+  link.href = state.settings.faviconUrl || "icons/favicon-32.png";
+}
 function renderBrandLogo() {
   const el = $("#brandLogo");
-  if (!el) return;
-  const url = String(state.settings.logoUrl || "").trim();
-  el.innerHTML = url
-    ? '<img class="brand-logo-img" src="' + esc(url) + '" alt="' + esc(state.settings.storeName || "Store") + '" />'
+  const wrap = el?.closest(".brand");
+  if (!el || !wrap) return;
+  const custom = String(state.settings.brandLogoMode || "default") === "custom" && String(state.settings.logoUrl || "").trim();
+  wrap.classList.toggle("custom-logo", !!custom);
+  el.innerHTML = custom
+    ? '<img class="brand-logo-img" src="' + esc(state.settings.logoUrl) + '" alt="' + esc(state.settings.storeName || "Store") + '" />'
     : icon("bag");
+  $("#brandName").textContent = state.settings.storeName || "FreshMart";
+  $("#brandSub").textContent = state.settings.brandTagline || "Grocery POS";
 }
 function applyBrand() {
   applyTheme(state.settings);
   renderBrandLogo();
+  applyFavicon();
   $("#brandName").textContent = state.settings.storeName;
   renderOperator();
   if (current) {
@@ -278,7 +290,8 @@ async function init() {
   setInterval(async () => { const u = await refreshStaffSession(); if (!u) { renderOperator(); location.hash = "#/dashboard"; await loginStaff(); renderOperator(); } }, 60000);
   window.addEventListener("sync:status", renderSync);
   window.addEventListener("data:changed", applyDataChange);
-  window.addEventListener("settings:changed", applyBrand);
+  window.addEventListener("settings:changed", () => { applyBrand(); applyLanguage(document, state.settings.language); });
+  window.addEventListener("language:preview", (e) => applyLanguage(document, e.detail?.language || "en"));
   window.addEventListener("staff:changed", renderOperator);
   window.addEventListener("pos:synced", () => reloadLocal());
   window.addEventListener("pwa:status", renderInstall);
@@ -296,8 +309,10 @@ async function init() {
   });
   initFolderBackup(() => backend.exportData()).catch(() => {});
   applyTheme(state.settings);
+  applyLanguage(document, state.settings.language);
   $("#brandName").textContent = state.settings.storeName;
   renderBrandLogo();
+  applyFavicon();
   renderSync();
   renderInstall();
   window.addEventListener("hashchange", navigate);

@@ -30,6 +30,7 @@ const api = async (action, payload = {}) => {
 };
 
 async function saveLocal() { await idb.set(KEY, data); }
+export async function getProcurementSnapshot() { await loadCache(); try { await refreshCloud(); } catch (_) {} return { suppliers: data.suppliers, purchases: data.purchases, purchaseItems: data.purchaseItems }; }
 async function loadCache() { const cached = await idb.get(KEY).catch(() => null); if (cached) data = { ...data, ...cached }; return !!cached; }
 async function refreshCloud() {
   const cfg = getConfig();
@@ -88,7 +89,7 @@ async function savePurchase(purchase, lines) {
   data.purchases.unshift(row);
   const items = lines.map((x,i) => ({ id: -(data.purchaseItems.filter(z => z.id < 0).length + i + 1), purchaseId: localId, productId: Number(x.productId), sku: x.sku, name: x.name, unit: x.unit, qty: Number(x.qty), unitCost: Number(x.unitCost), taxRate: Number(x.taxRate) || 0, lineSubtotal: Number(x.qty) * Number(x.unitCost), lineTax: Number(x.qty) * Number(x.unitCost) * (Number(x.taxRate) || 0) / 100 }));
   data.purchaseItems.push(...items); queue("purchase.save", { purchase: row, items }); await saveLocal();
-  for (const x of items) await backend.adjustStock({ productId: x.productId, mode: "add", quantity: x.qty, reason: `Supplier delivery ${row.purchaseNo}` });
+  for (const x of items) { await backend.adjustStock({ productId: x.productId, mode: "add", quantity: x.qty, reason: `Supplier delivery ${row.purchaseNo}` }); const p = state.all.find(z => Number(z.id) === Number(x.productId)); if (p) { p.cost = Number(x.unitCost); await backend.saveProduct({ product: { ...p, cost: Number(x.unitCost), stock: p.stock } }); } }
   await sync();
 }
 

@@ -20,12 +20,20 @@ export function showInvoiceModal(sale, items, { success = false, onNewSale, onCh
     flush: true,
     body: `${head}<div class="receipt-stage" style="${success ? "margin-top:12px" : ""}">${receiptHtml(sale, items)}</div>`,
     footer: success
-      ? `<button class="btn btn-outline" data-print>${icon("printer")} Print receipt</button><button class="btn btn-primary" data-new style="min-width:150px">${icon("plus")} New sale</button>`
+      ? `<button class="btn btn-outline" data-print>${icon("printer")} Print receipt</button><button class="btn btn-outline" data-whatsapp ${sale.customerPhone ? "" : "disabled title=\"Add a customer phone number to enable WhatsApp\""}>${icon("phone")} WhatsApp</button><button class="btn btn-primary" data-new style="min-width:150px">${icon("plus")} New sale</button>`
       : `${voided ? "" : `<button class="btn btn-danger-soft left" data-void>${icon("undo")} Void / refund</button>`}<button class="btn btn-outline" data-close2>Close</button><button class="btn btn-primary" data-print>${icon("printer")} Print</button>`,
     onClose: () => {
       if (success && onNewSale) onNewSale();
     },
   });
+  const wa = modal.$("[data-whatsapp]");
+  if (wa && sale.customerPhone) {
+    wa.onclick = () => {
+      const phone = String(sale.customerPhone).replace(/\D/g, "");
+      const text = `Thank you for shopping at ${state.settings.storeName}. Invoice ${sale.invoiceNo} total ${money(sale.total)}. Payment: ${sale.paymentMethod === "upi" ? "UPI / QR" : sale.paymentMethod === "card" ? "Card" : "Cash"}. ${state.settings.receiptFooter || ""}`;
+      window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, "_blank", "noopener");
+    };
+  }
   modal.$("[data-print]").onclick = () => printHtml(receiptHtml(sale, items));
   const n = modal.$("[data-new]");
   if (n) {

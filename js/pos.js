@@ -19,7 +19,7 @@ const LS_HELD = "freshmart.held";
 const S = {
   cart: [], // [{ productId, qty }]
   discount: { type: "none", value: 0 },
-  customer: { name: "", phone: "" },
+  customer: { name: "", phone: "", address: "" },
   search: "",
   category: "all",
   discountOpen: false,
@@ -37,7 +37,7 @@ function restore() {
     if (d) {
       S.cart = Array.isArray(d.cart) ? d.cart : [];
       S.discount = d.discount || { type: "none", value: 0 };
-      S.customer = d.customer || { name: "", phone: "" };
+      S.customer = d.customer || { name: "", phone: "", address: "" };
     }
   } catch {
     /* ignore */
@@ -63,7 +63,7 @@ function sanitize() {
 function resetOrder() {
   S.cart = [];
   S.discount = { type: "none", value: 0 };
-  S.customer = { name: "", phone: "" };
+  S.customer = { name: "", phone: "", address: "" };
   S.discountOpen = false;
   persist();
 }
@@ -78,6 +78,11 @@ const stepFor = (p) => (isWeighed(p.unit) ? 0.25 : 1);
 
 function visibleProducts() {
   const q = S.search.trim().toLowerCase();
+  if (S.category === "popular") {
+    const counts = new Map();
+    for (const sale of state.sales.filter(x => x.status === "completed")) for (const it of state.items.get(sale.id) || []) counts.set(it.productId, (counts.get(it.productId) || 0) + Number(it.qty || 0));
+    return state.products.filter(p => counts.has(p.id)).sort((a,b) => (counts.get(b.id)||0) - (counts.get(a.id)||0)).slice(0, 24).filter(p => !q || p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q) || (p.barcode||"").toLowerCase().includes(q));
+  }
   return state.products.filter(
     (p) =>
       (S.category === "all" || p.category === S.category) &&
@@ -139,8 +144,10 @@ function addProduct(pid, { focus = false } = {}) {
 /* ---------- rendering ---------- */
 function renderCats() {
   const counts = categoryCounts();
+  const popularCount = (() => { const ids = new Set(); for (const sale of state.sales.filter(x => x.status === "completed")) for (const it of state.items.get(sale.id) || []) ids.add(it.productId); return ids.size; })();
   $("#posCats", root).innerHTML =
     `<button class="chip ${S.category === "all" ? "active" : ""}" data-cat="all">All items <span class="count">${state.products.length}</span></button>` +
+    `<button class="chip ${S.category === "popular" ? "active" : ""}" data-cat="popular">Most Popular <span class="count">${popularCount}</span></button>` +
     counts
       .map(
         ([c, n]) =>
@@ -304,8 +311,10 @@ function openPayment() {
       panel = `<div class="pay-note">${icon("card", "lg")}<div>Ask the customer to tap, insert or swipe their card on the terminal for <b>${money(total)}</b>, then confirm once approved.</div></div>`;
     } else {
       const s = state.settings;
-      const payload = s.upiId
-        ? `upi://pay?pa=${encodeURIComponent(s.upiId)}&pn=${encodeURIComponent(s.storeName)}&am=${total.toFixed(2)}&cu=INR&tn=POS%20payment`
+      let defaultUpi = s.upiId || "";
+      try { const ids = JSON.parse(s.upiIds || "[]"); const hit = ids.find(x => x && x.enabled !== false && x.id); if (hit) defaultUpi = hit.id; } catch {}
+      const payload = defaultUpi
+        ? `upi://pay?pa=${encodeURIComponent(defaultUpi)}&pn=${encodeURIComponent(s.storeName)}&am=${total.toFixed(2)}&cu=INR&tn=POS%20payment`
         : `${s.storeName} | PAY ${s.currency}${total.toFixed(2)}`;
       panel = `<div class="pay-qr"><img alt="Payment QR" src="${qrUrl(payload, { format: "svg" })}" /><div class="muted">Customer scans this QR to pay <b style="color:var(--text)">${money(total)}</b></div></div>`;
     }
@@ -376,6 +385,7 @@ function openPayment() {
         discountValue: S.discount.value,
         customerName: S.customer.name,
         customerPhone: S.customer.phone,
+        customerAddress: S.customer.address,
         paymentMethod: method,
         amountPaid: method === "cash" ? received() : total,
         clientRef,
@@ -501,9 +511,10 @@ function focusSearch() {
 }
 function syncInputs() {
   const n = $("#custName", root);
-  const ph = $("#custPhone", root);
+  const ph = $("#custPhone", root), addr = $("#custAddress", root);
   if (n) n.value = S.customer.name || "";
   if (ph) ph.value = S.customer.phone || "";
+  if (addr) addr.value = S.customer.address || "";
 }
 function clearSearch() {
   S.search = "";
@@ -554,6 +565,7 @@ export async function mount(el) {
       <div class="cart-customer">
         <input class="input input-sm" id="custName" placeholder="Customer name (optional)" autocomplete="off" />
         <input class="input input-sm" id="custPhone" placeholder="Phone" autocomplete="off" inputmode="tel" />
+        <input class="input input-sm" id="custAddress" placeholder="Customer address (optional, for GST bills)" autocomplete="street-address" />
       </div>
       <div class="cart-lines" id="cartLines"></div>
       <div class="cart-summary" id="cartSummary"></div>
@@ -611,7 +623,15 @@ export async function mount(el) {
   });
 
   $("#custName", el).addEventListener("input", (e) => { S.customer.name = e.target.value; persist(); });
-  $("#custPhone", el).addEventListener("input", (e) => { S.customer.phone = e.target.value; persist(); });
+  $("#custPhone", el).addEventListener("input", debounce((e) => {
+    S.customer.phone = e.target.value; const raw = e.target.value.replace(/\D/g, "");
+    if (raw.length >= 7) {
+      const hit = state.sales.find(x => String(x.customerPhone || "").replace(/\D/g, "").slice(-10) === raw.slice(-10) && x.customerName);
+      if (hit) { S.customer.name = hit.customerName; $("#custName", el).value = hit.customerName; }
+    }
+    persist();
+  }, 220));
+  $("#custAddress", el).addEventListener("input", (e) => { S.customer.address = e.target.value; persist(); });
 
   const lines = $("#cartLines", el);
   lines.addEventListener("click", (e) => {

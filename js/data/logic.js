@@ -8,6 +8,8 @@ export const DEFAULT_SETTINGS = {
   phoneNumbers: JSON.stringify([{ number: "+91 98765 43210", type: "voice", label: "Store" }]),
   language: "en",
   logoUrl: "",
+  brandLogoMode: "default", // default | custom
+  brandTagline: "Grocery POS",
   faviconUrl: "",
   receiptLogoUrl: "",
   upiQrUrl: "",
@@ -15,6 +17,9 @@ export const DEFAULT_SETTINGS = {
   currency: "₹",
   taxLabel: "GST",
   upiId: "",
+  upiIds: JSON.stringify([]), // [{ id, label, enabled }], first enabled item is default
+  receiptCustomerName: "true",
+  receiptCustomerPhone: "true",
   receiptFooter: "Thank you for shopping with us! Please visit again.",
   themeColor: "#0f9d58", // brand colour: buttons, icons, highlights
   themeMode: "light", // light | dark | system
