@@ -11,7 +11,7 @@ import { receiptHtml } from "./receipt.js";
 import { importBulk, importProducts, loadAll, reloadLocal, saveSettings, scriptUpToDate, state } from "./store.js";
 import { THEME_PRESETS, applyTheme, normalizeColor } from "./theme.js";
 import { LANGUAGE_OPTIONS } from "./i18n.js";
-import { can, loginStaff, ensureOnlineStaffAuth } from "./staff.js";
+import { can, ensureOnlineStaffAuth } from "./staff.js";
 import { buildExport, demoPayload, invoiceLinesCsv, invoicesCsv, productsCsv, toPortable } from "./transfer.js";
 import {
   $, choiceDialog, confirmDialog, downloadFile, esc, fmtBytes, hydrateIcons, icon, timeAgo, toast,
@@ -841,7 +841,7 @@ export async function mount(el) {
       if (!isAuthError(err)) throw err;
       const { clearAuthToken } = await import("./auth.js");
       clearAuthToken();
-      const signed = await loginStaff(true);
+      const signed = await ensureOnlineStaffAuth();
       if (!signed) throw new Error(message);
       return fn();
     }
