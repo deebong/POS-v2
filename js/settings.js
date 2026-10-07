@@ -21,7 +21,7 @@ const SAMPLE_SALE = {
   invoiceNo: "INV-20250101-C1-0042",
   createdAt: new Date().toISOString(),
   customerName: "Priya Sharma",
-  customerPhone: "",
+  customerPhone: "+91 98765 43210",
   subtotal: 262,
   discount: 0,
   tax: 11.2,

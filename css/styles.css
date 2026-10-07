@@ -937,3 +937,17 @@ input[type="file"]::file-selector-button:hover { background: var(--surface); bor
   .backup-verify-row > .btn-row { grid-column: 2; justify-self: start; }
   .backup-verify-row > .field { grid-column: 2; }
 }
+
+
+/* Settings / multilingual layout hardening */
+.settings-save-sticky { margin-bottom: 14px; }
+.settings-save-sticky + .card-head { margin-top: 0; }
+.status-row .field > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.status-row .field .input { flex: 1 1 220px; min-width: 0 !important; }
+.backup-verify-row .field { min-width: 0; }
+@media (max-width: 640px) {
+  .backup-verify-row .field { grid-column: 2; }
+  .backup-verify-row .btn-row { grid-column: 2; width: 100%; }
+  .backup-verify-row .btn-row .btn { flex: 0 1 auto; }
+  .settings-save-sticky { margin-bottom: 14px; }
+}

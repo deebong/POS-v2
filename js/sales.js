@@ -1,9 +1,10 @@
 // Invoices / sales history + invoice modal (shared with POS)
 import { receiptHtml } from "./receipt.js";
+import { gstBillHtml } from "./gst-bill.js";
 import { requestApproval } from "./approval.js";
 import { HISTORY_DAYS, lookupInvoice, state, voidSale } from "./store.js";
 import {
-  $, confirmDialog, debounce, esc, fmtDateTime, hydrateIcons, icon, methodBadge, money, num, openModal, printHtml, toast,
+  $, confirmDialog, debounce, downloadFile, esc, fmtDateTime, hydrateIcons, icon, methodBadge, money, num, openModal, printHtml, toast,
 } from "./ui.js";
 
 export function showInvoiceModal(sale, items, { success = false, onNewSale, onChange } = {}) {
@@ -20,8 +21,8 @@ export function showInvoiceModal(sale, items, { success = false, onNewSale, onCh
     flush: true,
     body: `${head}<div class="receipt-stage" style="${success ? "margin-top:12px" : ""}">${receiptHtml(sale, items)}</div>`,
     footer: success
-      ? `<button class="btn btn-outline" data-print>${icon("printer")} Print receipt</button><button class="btn btn-outline" data-whatsapp ${sale.customerPhone ? "" : "disabled title=\"Add a customer phone number to enable WhatsApp\""}>${icon("phone")} WhatsApp</button><button class="btn btn-primary" data-new style="min-width:150px">${icon("plus")} New sale</button>`
-      : `${voided ? "" : `<button class="btn btn-danger-soft left" data-void>${icon("undo")} Void / refund</button>`}<button class="btn btn-outline" data-close2>Close</button><button class="btn btn-primary" data-print>${icon("printer")} Print</button>`,
+      ? `<button class="btn btn-outline" data-print>${icon("printer")} Print receipt</button><button class="btn btn-outline" data-gst>${icon("receipt")} GST Bill</button><button class="btn btn-outline" data-gst-doc>${icon("download")} Word</button><button class="btn btn-outline" data-whatsapp ${sale.customerPhone ? "" : "disabled title=\"Add a customer phone number to enable WhatsApp\""}>${icon("phone")} WhatsApp</button><button class="btn btn-primary" data-new style="min-width:150px">${icon("plus")} New sale</button>`
+      : `${voided ? "" : `<button class="btn btn-danger-soft left" data-void>${icon("undo")} Void / refund</button>`}<button class="btn btn-outline" data-close2>Close</button><button class="btn btn-outline" data-gst>${icon("receipt")} GST Bill</button><button class="btn btn-outline" data-gst-doc>${icon("download")} Word</button><button class="btn btn-primary" data-print>${icon("printer")} Print</button>`,
     onClose: () => {
       if (success && onNewSale) onNewSale();
     },
@@ -35,6 +36,11 @@ export function showInvoiceModal(sale, items, { success = false, onNewSale, onCh
     };
   }
   modal.$("[data-print]").onclick = () => printHtml(receiptHtml(sale, items));
+  const gst = modal.$("[data-gst]");
+  const gstDoc = modal.$("[data-gst-doc]");
+  const gstHtml = () => gstBillHtml(sale, items, state.settings);
+  if (gst) gst.onclick = () => printHtml(gstHtml());
+  if (gstDoc) gstDoc.onclick = () => downloadFile(`${sale.invoiceNo}-GST-Bill.doc`, gstHtml(), "application/msword;charset=utf-8");
   const n = modal.$("[data-new]");
   if (n) {
     n.onclick = () => modal.close();

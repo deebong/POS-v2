@@ -51,7 +51,11 @@ function render(){
 function bind(data){
   $("#reportApply",root).onclick=()=>{ const from=$("#reportFrom",root).value,to=$("#reportTo",root).value; if(!from||!to||from>to)return toast("Choose a valid report date range","warn"); range={from,to}; render(); };
   $("#reportExport",root).onclick=()=>exportCsv(data);
-  $("#gstExport",root)?.addEventListener("click",()=>exportGstCsv(data));
+  $("#gstExport",root)?.addEventListener("click",async()=>{
+    $("#gstExport",root).disabled=true;
+    try { procurement=await getProcurementSnapshot({refresh:true}); exportGstCsv(data); }
+    finally { $("#gstExport",root).disabled=false; }
+  });
 }
 function exportGstCsv(d){
   const rows=[["Record type","Invoice / Purchase No","Date","Customer / Supplier","GSTIN","Full address","Phone","Product","SKU","Quantity","Unit","Unit price / cost","Taxable value","Tax rate","Tax","Total","Payment / Status"]];
