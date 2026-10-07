@@ -329,6 +329,14 @@ export async function showInstallationWizard(root = document.getElementById("vie
       if (!data.receiptLogoUrl && $("#iReceiptLogo",root)?.files?.[0]) data.receiptLogoUrl = await readLogo($("#iReceiptLogo",root).files[0], data.mode, "receipt-logo");
       if (!data.faviconUrl && $("#iFavicon",root)?.files?.[0]) data.faviconUrl = await readLogo($("#iFavicon",root).files[0], data.mode, "favicon");
       const settings={storeName:data.storeName,address:data.address,phoneNumbers:JSON.stringify(data.phoneNumbers),language:data.language,currency:data.currency,taxId:data.taxId,taxLabel:data.taxLabel,upiId:data.upiId,upiQrUrl:data.upiQrUrl||"",themeColor:data.themeColor,themeMode:data.themeMode,brandTagline:data.brandTagline,brandLogoMode:data.brandLogoMode,sidebarTheme:data.sidebarTheme,productImageMode:data.productImageMode,productLabelCode:data.productLabelCode,logoUrl:data.logoUrl||"",faviconUrl:data.faviconUrl||"",receiptLogoUrl:data.receiptLogoUrl||"",receiptFooter:data.receiptFooter};
+      // Re-check the authoritative backend before any cloud initialization.
+      if (data.mode !== "local" && /^https:\/\/script\.google\.com\/(a\/[^/]+\/)?macros\/s\/[^/]+\/exec$/.test(data.url)) {
+        saveConfig({mode:data.mode,url:data.url,key:data.key});
+        try {
+          const liveStatus = await backend.installationStatus();
+          if (liveStatus?.installed) { existingBackend = true; existingStatus = liveStatus; }
+        } catch {}
+      }
       if (existingBackend) {
         saveConfig({mode:data.mode,url:data.url,key:data.key});
         await backend.bootstrap();
@@ -340,13 +348,22 @@ export async function showInstallationWizard(root = document.getElementById("vie
       }
       if (data.mode !== "local") {
         saveConfig({mode:data.mode,url:data.url,key:data.key});
-        await backend.initialize({setupCode:data.setupCode,installation:{id:uid(),language:data.language,mode:data.mode},settings,admin:{id:data.adminId,name:data.adminName,username:data.adminUsername,phone:data.phoneNumbers[0]?.number||"",role:"admin",active:true,...await makeVerifier(data.adminPin)}});
+        try {
+          await backend.initialize({setupCode:data.setupCode,installation:{id:uid(),language:data.language,mode:data.mode},settings,admin:{id:data.adminId,name:data.adminName,username:data.adminUsername,phone:data.phoneNumbers[0]?.number||"",role:"admin",active:true,...await makeVerifier(data.adminPin)}});
+        } catch (error) {
+          if (!/already installed/i.test(String(error?.message || error))) throw error;
+          existingBackend = true;
+          existingStatus = await backend.installationStatus();
+          await backend.bootstrap();
+          setMarker({mode:data.mode,installationId:existingStatus?.installationId||""});
+          localStorage.setItem("pos.store.link.v1", location.href.split("?")[0] + "?store=" + encodeStoreConfig({url:data.url,key:data.key,mode:data.mode}));
+          $("#installFooter",root).style.display="none";
+          window.dispatchEvent(new CustomEvent("installation:complete"));
+          return;
+        }
         const {onlineLogin}=await import("./auth.js");
         await onlineLogin(data.adminUsername,data.adminPin);
       } else {
-        saveConfig({mode:"local",url:"",key:""});
-        await backend.startFresh();
-      }
       await saveSettings(settings);
       await provisionInitialAdmin({id:data.adminId,name:data.adminName,username:data.adminUsername,phone:data.phoneNumbers[0]?.number||"",pin:data.adminPin});
       setMarker({mode:data.mode});
