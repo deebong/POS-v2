@@ -725,9 +725,8 @@ function settingsMap_() {
 /* ------------------------------------------------------------------ */
 
 function ping_() {
-  // Ping also performs the one-time sheet bootstrap/migration because the POS connection
-  // flow historically uses this call to prepare a new backend.
-  ensureAll_();
+  // Keep the connectivity probe lightweight. Schema creation/migrations belong to bootstrap_;
+  // doing them on every ping made the Settings page report an 8s timeout on busy sheets.
   var ss = ss_();
   return { spreadsheetName: ss.getName(), spreadsheetUrl: ss.getUrl(), version: VERSION, features: ['sync', 'bulk', 'images', 'backups'] };
 }
@@ -1003,6 +1002,7 @@ function saveSettings_(req) {
     else appendList.push({ key: k, value: v });
   });
   appendRows_('Settings', appendList);
+  SpreadsheetApp.flush();
   return { settings: settingsMap_() };
 }
 
