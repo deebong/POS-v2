@@ -225,30 +225,14 @@ async function signIn(user, pin) {
   await persistSession();
 
   if (navigator.onLine && cfg.mode && cfg.mode !== "local" && cfg.url) {
-    const { onlineLogin } = await import("./auth.js");
-    Promise.resolve().then(async () => {
-      try {
-        const serverUser = await onlineLogin(user.username, pin, {
-          pinHash: localHash,
-          pinSalt: user.pinSalt,
-          pinIterations: ITERATIONS,
-        });
-        if (serverUser.id !== user.id) throw new Error("Server staff identity does not match this counter.");
-        sessionStorage.removeItem("freshmart.auth.offline");
-        window.dispatchEvent(new CustomEvent("staff:server-auth", { detail: { ok: true } }));
-        window.dispatchEvent(new CustomEvent("sync:status"));
-      } catch (e) {
-        const message = String(e?.message || e || "");
-        sessionStorage.setItem("freshmart.auth.offline", "1");
-        window.dispatchEvent(new CustomEvent("staff:server-auth", {
-          detail: {
-            ok: false,
-            transport: /took too long to respond|Couldn't reach Google Sheets|Failed to fetch|NetworkError|Load failed|non-JSON response/i.test(message),
-            message,
-          },
-        }));
-        window.dispatchEvent(new CustomEvent("sync:status"));
-      }
+    // Server authentication is deliberately background-only. A transient Apps Script
+    // delay must never turn a successful local sign-in into an "offline" sign-in state.
+    ensureOnlineStaffAuth().then(() => {
+      window.dispatchEvent(new CustomEvent("staff:server-auth", { detail: { ok: true } }));
+      window.dispatchEvent(new CustomEvent("sync:status"));
+    }).catch(() => {
+      // Do not surface transport/authentication failures during sign-in. Protected
+      // operations will retry server authentication when they actually need it.
     });
   }
 
@@ -298,10 +282,10 @@ export async function verifyStaffPin(user, pin) {
 }
 
 let onlineAuthPromise = null;
-export async function ensureOnlineStaffAuth() {
+
+async function authenticateServer(user = currentStaff()) {
   await initStaff();
   const cfg = getConfig();
-  const user = currentStaff();
   if (!user || !navigator.onLine || cfg.mode === "local" || !cfg.url) return false;
   const { getAuthToken } = await import("./auth.js");
   if (getAuthToken()) return true;
@@ -317,11 +301,13 @@ export async function ensureOnlineStaffAuth() {
     });
     if (serverUser.id !== user.id) throw new Error("Server staff identity does not match this counter.");
     sessionStorage.removeItem("freshmart.auth.offline");
-    window.dispatchEvent(new CustomEvent("staff:server-auth", { detail: { ok: true } }));
-    window.dispatchEvent(new CustomEvent("sync:status"));
     return true;
   })().finally(() => { onlineAuthPromise = null; });
   return onlineAuthPromise;
+}
+
+export async function ensureOnlineStaffAuth() {
+  return authenticateServer(currentStaff());
 }
 export async function refreshStaffSession() { await initStaff(); const s = await idb.get(SESSION_KEY).catch(() => null); if (!sessionValid(s)) { currentId = ""; await idb.del(SESSION_KEY).catch(() => {}); return null; } await touchSession(); return currentStaff(); }
 export async function logoutStaff() {
