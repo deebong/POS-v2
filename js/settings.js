@@ -831,6 +831,8 @@ export async function mount(el) {
     const btn = $("#setSave", el);
     btn.disabled = true;
     try {
+      // The local operator session can outlive the server auth token. Re-authenticate
+      // before a settings mutation when the Sheets adapter has already reported expiry.
       if (getConfig().mode !== "local" && navigator.onLine && currentStatus()?.authRequired) {
         const { clearAuthToken } = await import("./auth.js");
         clearAuthToken();
@@ -859,6 +861,8 @@ export async function mount(el) {
       if (qrFile) { const data = await fileToDataUrl(qrFile); const res = await backend.uploadImage({ dataUrl:data, name:"upi-qr" }); values.upiQrUrl = res.url || data; }
       values.themeColor = normalizeColor(values.themeColor);
       const saved = await saveSettings(values);
+      // Push a settings save immediately while online. This prevents a stale server
+      // session from leaving the change silently queued after the user sees "saved".
       if (getConfig().mode === "hybrid" && navigator.onLine) {
         try {
           await backend.sync({ pull: false, throwOnError: true });
