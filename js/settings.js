@@ -824,6 +824,29 @@ export async function mount(el) {
   });
   form.addEventListener("change", livePreview);
   syncSwatches();
+  const isAuthError = (err) => /Authentication required or session expired|Invalid access key/i.test(String(err?.message || err));
+  const ensureSettingsAuth = async () => {
+    if (getConfig().mode === "local" || !navigator.onLine) return;
+    const { getAuthToken, clearAuthToken } = await import("./auth.js");
+    if (!getAuthToken() || currentStatus()?.authRequired) {
+      clearAuthToken();
+      const signed = await loginStaff(true);
+      if (!signed) throw new Error("Google Sheets sign-in is required to save store details.");
+    }
+  };
+  const withSettingsAuthRetry = async (fn, message) => {
+    try {
+      return await fn();
+    } catch (err) {
+      if (!isAuthError(err)) throw err;
+      const { clearAuthToken } = await import("./auth.js");
+      clearAuthToken();
+      const signed = await loginStaff(true);
+      if (!signed) throw new Error(message);
+      return fn();
+    }
+  };
+
   let saving = false;
   const save = async () => {
     if (saving || !form.reportValidity()) return;
@@ -831,14 +854,9 @@ export async function mount(el) {
     const btn = $("#setSave", el);
     btn.disabled = true;
     try {
-      // The local operator session can outlive the server auth token. Re-authenticate
-      // before a settings mutation when the Sheets adapter has already reported expiry.
-      if (getConfig().mode !== "local" && navigator.onLine && currentStatus()?.authRequired) {
-        const { clearAuthToken } = await import("./auth.js");
-        clearAuthToken();
-        const signed = await loginStaff(true);
-        if (!signed) throw new Error("Google Sheets sign-in is required to save store details.");
-      }
+      // A local staff session can outlive the server auth token. Ensure the online
+      // admin session is valid before uploading branding files or saving settings.
+      await ensureSettingsAuth();
       const values = read();
       // Keep the select-backed setting explicit. This avoids FormData edge cases after
       // a live-preview change event and makes the persisted value authoritative.
@@ -855,19 +873,51 @@ export async function mount(el) {
       const receiptLogoFile = $("#settingsReceiptLogo", el)?.files?.[0];
       const faviconFile = $("#settingsFavicon", el)?.files?.[0];
       const qrFile = $("#settingsUpiQr", el)?.files?.[0];
-      if (logoFile) { const data = await fileToDataUrl(logoFile); const res = await backend.uploadImage({ dataUrl:data, name:"store-logo" }); values.logoUrl = res.url || data; values.brandLogoMode = "custom"; }
-      if (receiptLogoFile) { const data = await fileToDataUrl(receiptLogoFile); const res = await backend.uploadImage({ dataUrl:data, name:"receipt-logo" }); values.receiptLogoUrl = res.url || data; }
-      if (faviconFile) { const data = await fileToDataUrl(faviconFile); const res = await backend.uploadImage({ dataUrl:data, name:"favicon" }); values.faviconUrl = res.url || data; }
-      if (qrFile) { const data = await fileToDataUrl(qrFile); const res = await backend.uploadImage({ dataUrl:data, name:"upi-qr" }); values.upiQrUrl = res.url || data; }
+      if (logoFile) {
+        const data = await fileToDataUrl(logoFile);
+        const res = await withSettingsAuthRetry(
+          () => backend.uploadImage({ dataUrl:data, name:"store-logo" }),
+          "Google Sheets sign-in is required to upload the store logo.",
+        );
+        values.logoUrl = res.url || data;
+        values.brandLogoMode = "custom";
+      }
+      if (receiptLogoFile) {
+        const data = await fileToDataUrl(receiptLogoFile);
+        const res = await withSettingsAuthRetry(
+          () => backend.uploadImage({ dataUrl:data, name:"receipt-logo" }),
+          "Google Sheets sign-in is required to upload the receipt logo.",
+        );
+        values.receiptLogoUrl = res.url || data;
+      }
+      if (faviconFile) {
+        const data = await fileToDataUrl(faviconFile);
+        const res = await withSettingsAuthRetry(
+          () => backend.uploadImage({ dataUrl:data, name:"favicon" }),
+          "Google Sheets sign-in is required to upload the favicon.",
+        );
+        values.faviconUrl = res.url || data;
+      }
+      if (qrFile) {
+        const data = await fileToDataUrl(qrFile);
+        const res = await withSettingsAuthRetry(
+          () => backend.uploadImage({ dataUrl:data, name:"upi-qr" }),
+          "Google Sheets sign-in is required to upload the UPI QR.",
+        );
+        values.upiQrUrl = res.url || data;
+      }
       values.themeColor = normalizeColor(values.themeColor);
-      const saved = await saveSettings(values);
+      const saved = await withSettingsAuthRetry(
+        () => saveSettings(values),
+        "Google Sheets sign-in is required to save store details.",
+      );
       // Push a settings save immediately while online. This prevents a stale server
       // session from leaving the change silently queued after the user sees "saved".
       if (getConfig().mode === "hybrid" && navigator.onLine) {
         try {
           await backend.sync({ pull: false, throwOnError: true });
         } catch (syncError) {
-          if (!/Authentication required or session expired|Invalid access key/i.test(String(syncError?.message || syncError))) throw syncError;
+          if (!isAuthError(syncError)) throw syncError;
           const { clearAuthToken } = await import("./auth.js");
           clearAuthToken();
           const signed = await loginStaff(true);
