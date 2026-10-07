@@ -151,6 +151,15 @@ export async function createHybridAdapter(cfg) {
       emit();
       let changed = false;
       try {
+        // A hybrid sync is a server-authorized operation. If the short-lived browser
+        // token is missing, share the in-flight local-first sign-in reauthentication
+        // instead of racing it and immediately declaring the session expired.
+        const { getAuthToken } = await import("../auth.js");
+        if (!getAuthToken()) {
+          const { ensureOnlineStaffAuth } = await import("../staff.js");
+          const authenticated = await ensureOnlineStaffAuth();
+          if (!authenticated) throw new Error("Authentication required or session expired. Sign in again.");
+        }
         while (outbox.length && !disposed) {
           const batch = outbox.slice(0, BATCH);
           const res = await remote.syncBatch({ ops: batch, deviceId: device.id, deviceCode: device.code });
