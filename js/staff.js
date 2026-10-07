@@ -296,6 +296,33 @@ export async function verifyStaffPin(user, pin) {
   if (!user?.active) return false;
   return verifyPin(user, pin);
 }
+
+let onlineAuthPromise = null;
+export async function ensureOnlineStaffAuth() {
+  await initStaff();
+  const cfg = getConfig();
+  const user = currentStaff();
+  if (!user || !navigator.onLine || cfg.mode === "local" || !cfg.url) return false;
+  const { getAuthToken } = await import("./auth.js");
+  if (getAuthToken()) return true;
+  if (onlineAuthPromise) return onlineAuthPromise;
+  onlineAuthPromise = (async () => {
+    const localHash = await getPinVerifier(user, "");
+    if (!localHash) throw new Error("The local staff credential is unavailable.");
+    const { onlineLogin } = await import("./auth.js");
+    const serverUser = await onlineLogin(user.username, "", {
+      pinHash: localHash,
+      pinSalt: user.pinSalt,
+      pinIterations: ITERATIONS,
+    });
+    if (serverUser.id !== user.id) throw new Error("Server staff identity does not match this counter.");
+    sessionStorage.removeItem("freshmart.auth.offline");
+    window.dispatchEvent(new CustomEvent("staff:server-auth", { detail: { ok: true } }));
+    window.dispatchEvent(new CustomEvent("sync:status"));
+    return true;
+  })().finally(() => { onlineAuthPromise = null; });
+  return onlineAuthPromise;
+}
 export async function refreshStaffSession() { await initStaff(); const s = await idb.get(SESSION_KEY).catch(() => null); if (!sessionValid(s)) { currentId = ""; await idb.del(SESSION_KEY).catch(() => {}); return null; } await touchSession(); return currentStaff(); }
 export async function logoutStaff() {
   const hadOnlineAuth = navigator.onLine && getConfig().mode !== "local";
