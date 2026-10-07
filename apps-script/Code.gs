@@ -32,7 +32,7 @@
 
 var API_KEY = ''; // optional shared secret, e.g. 'my-store-key-123'
 var SPREADSHEET_ID = ''; // leave empty when the script is opened from the sheet (Extensions ▸ Apps Script)
-var VERSION = '1.5.0';
+var VERSION = '1.6.0';
 var MAX_CART_LINES = 150;
 
 // Column schema: [name, type]  n = number, s = text, b = true/false, d = date-time
@@ -51,7 +51,8 @@ var SCHEMA = {
   Staff: [['id', 's'], ['name', 's'], ['username', 's'], ['phone', 's'], ['role', 's'], ['active', 'b'], ['pinSalt', 's'], ['pinHash', 's'], ['pinIterations', 'n'], ['mustChangePin', 'b'], ['createdAt', 'd'], ['updatedAt', 'd'], ['lastLoginAt', 'd'], ['failedAttempts', 'n'], ['lockedUntil', 'd']],
   AuthSessions: [['tokenHash', 's'], ['staffId', 's'], ['createdAt', 'd'], ['expiresAt', 'd'], ['lastSeenAt', 'd'], ['deviceId', 's'], ['revoked', 'b']],
   AuditLog: [['id', 's'], ['at', 'd'], ['actorId', 's'], ['actorName', 's'], ['role', 's'], ['deviceId', 's'], ['action', 's'], ['module', 's'], ['detail', 's'], ['entity', 's'], ['level', 's'], ['prevHash', 's'], ['hash', 's']],
-  SyncLog: [['opId', 's'], ['appliedAt', 'd'], ['deviceId', 's'], ['type', 's'], ['ok', 'b'], ['message', 's']]
+  SyncLog: [['opId', 's'], ['appliedAt', 'd'], ['deviceId', 's'], ['type', 's'], ['ok', 'b'], ['message', 's']],
+  Customers: [['id', 's'], ['name', 's'], ['phone', 's'], ['email', 's'], ['address', 's'], ['notes', 's'], ['createdAt', 'd'], ['updatedAt', 'd'], ['active', 'b']]
 };
 var SETTING_KEYS = ['storeName', 'address', 'phone', 'phoneNumbers', 'language', 'taxId', 'currency', 'taxLabel', 'upiId', 'upiIds', 'upiQrUrl', 'receiptCustomerName', 'receiptCustomerPhone', 'brandTagline', 'receiptFooter',
   'themeColor', 'themeMode', 'sidebarTheme', 'productImageMode', 'productLabelCode', 'logoUrl', 'brandLogoMode', 'faviconUrl', 'receiptLogoUrl', 'installationId', 'installationStatus', 'installedAt'];
@@ -103,6 +104,7 @@ var ACTIONS = {
   checkout: function (r) { return withLock_(function () { return checkout_(r); }); },
   voidSale: function (r) { return withLock_(function () { return voidSale_(r); }); },
   getSale: getSale_,
+  saveCustomer: function (r) { return withLock_(function () { return saveCustomer_(r); }); },
   saveSettings: function (r) { return withLock_(function () { return saveSettings_(r); }); },
   syncBatch: function (r) { return withLock_(function () { return syncBatch_(r); }); },
   importBulk: function (r) { return withLock_(function () { return importBulk_(r); }); },
@@ -234,7 +236,7 @@ function requireActionAuth_(req) {
   var roles = {
     saveProduct: 'manager', deleteProduct: 'manager', adjustStock: 'manager', importProducts: 'manager',
     checkout: 'cashier', voidSale: 'manager', saveSettings: 'admin', importBulk: 'manager',
-    uploadImage: 'manager', backupSetup: 'admin', backupNow: 'admin', backupVerify: 'admin',
+    uploadImage: 'manager', saveCustomer: 'cashier', backupSetup: 'admin', backupNow: 'admin', backupVerify: 'admin',
     procurementSync: 'manager'
   };
   if (action === 'installationStatus' || action === 'initialize') return null;
@@ -371,7 +373,18 @@ function tz_() { return ss_().getSpreadsheetTimeZone() || 'UTC'; }
 
 function ensureAll_() {
   var ss = ss_();
-  Object.keys(SCHEMA).forEach(function (name) { ensureHeaders_(setupSheet_(ss, name), name); });
+  var props = PropertiesService.getScriptProperties();
+  var migrationKey = 'SCHEMA_MIGRATION_VERSION';
+  var needsMigration = props.getProperty(migrationKey) !== VERSION;
+  Object.keys(SCHEMA).forEach(function (name) {
+    var sh = ss.getSheetByName(name);
+    if (!sh) {
+      setupSheet_(ss, name);
+    } else if (needsMigration) {
+      ensureHeaders_(sh, name);
+    }
+  });
+  if (needsMigration) props.setProperty(migrationKey, VERSION);
   var def = ss.getSheetByName('Sheet1');
   if (def && def.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(def);
 }
@@ -397,12 +410,64 @@ function setupSheet_(ss, name) {
 // Sheets created by an older version get any new columns (e.g. imageUrl) added at the end.
 function ensureHeaders_(sh, name) {
   var cols = SCHEMA[name];
-  var have = sh.getRange(1, 1, 1, cols.length).getValues()[0];
-  for (var i = 0; i < cols.length; i++) {
-    if (have[i] !== '' && have[i] !== null) continue;
-    sh.getRange(1, i + 1).setValue(cols[i][0]).setFontWeight('bold').setBackground('#0f9d58').setFontColor('#ffffff');
-    if (cols[i][1] === 's') sh.getRange(2, i + 1, Math.max(sh.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  var schemaNames = cols.map(function (c) { return c[0]; });
+  var lastCol = Math.max(sh.getLastColumn(), schemaNames.length, 1);
+  var lastRow = sh.getLastRow();
+  var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(function (v) { return String(v == null ? '' : v).trim(); });
+
+  // New sheets: create the exact schema in the correct order.
+  var hasAnyHeader = headers.some(function (h) { return !!h; });
+  if (!hasAnyHeader) {
+    sh.getRange(1, 1, 1, schemaNames.length)
+      .setValues([schemaNames])
+      .setFontWeight('bold').setBackground('#0f9d58').setFontColor('#ffffff');
+    sh.setFrozenRows(1);
+    formatSchemaColumns_(sh, cols);
+    return;
   }
+
+  // Legacy sheets can have new columns inserted in the middle of the schema.
+  // Never trust column position: rebuild known columns by their header names and
+  // keep any unknown legacy columns at the end so no user data is discarded.
+  var positions = {};
+  headers.forEach(function (h, i) {
+    if (h && positions[h] === undefined) positions[h] = i;
+  });
+  var ordered = schemaNames.slice();
+  headers.forEach(function (h) {
+    if (h && ordered.indexOf(h) < 0) ordered.push(h);
+  });
+  var needsReorder = ordered.length !== headers.filter(function (h) { return !!h; }).length;
+  for (var i = 0; i < schemaNames.length; i++) {
+    if (headers[i] !== schemaNames[i]) { needsReorder = true; break; }
+  }
+
+  if (needsReorder) {
+    var rows = lastRow > 1 ? sh.getRange(2, 1, lastRow - 1, lastCol).getValues() : [];
+    var matrix = [ordered].concat(rows.map(function (row) {
+      return ordered.map(function (name) {
+        var idx = positions[name];
+        return idx === undefined ? '' : row[idx];
+      });
+    }));
+    sh.clearContents();
+    sh.getRange(1, 1, matrix.length, ordered.length).setValues(matrix);
+    sh.getRange(1, 1, 1, ordered.length)
+      .setFontWeight('bold').setBackground('#0f9d58').setFontColor('#ffffff');
+    sh.setFrozenRows(1);
+  } else {
+    sh.getRange(1, 1, 1, schemaNames.length)
+      .setFontWeight('bold').setBackground('#0f9d58').setFontColor('#ffffff');
+  }
+}
+
+function formatSchemaColumns_(sh, cols) {
+  var rows = Math.max(sh.getMaxRows() - 1, 1);
+  cols.forEach(function (c, i) {
+    var rng = sh.getRange(2, i + 1, rows, 1);
+    if (c[1] === 's') rng.setNumberFormat('@');
+    else if (c[1] === 'd') rng.setNumberFormat('yyyy-mm-dd hh:mm:ss');
+  });
 }
 
 function sheet_(name) {
@@ -643,12 +708,36 @@ function bootstrap_(req) {
     products: readTable_('Products').map(pubProduct_),
     sales: sales.map(pubSale_),
     saleItems: items.map(pubItem_),
+    customers: readTable_('Customers').filter(function (x) { return x.active !== false; }),
     spreadsheetUrl: ss.getUrl(),
     spreadsheetName: ss.getName(),
     serverTime: new Date().toISOString(),
     version: VERSION,
     appliedOps: req.includeOps ? recentOpIds_(3000) : undefined
   };
+}
+
+function saveCustomer_(req) {
+  var b = req.customer || {};
+  var id = str_(b.id, 80);
+  var name = str_(b.name, 100);
+  var phone = str_(b.phone, 30);
+  var email = str_(b.email, 160);
+  var address = str_(b.address, 500);
+  var notes = str_(b.notes, 500);
+  if (!name && !phone && !email) throw new Error('Customer name, phone or email is required.');
+  var rows = readTable_('Customers'), existing = null;
+  rows.forEach(function (r) {
+    if ((id && String(r.id) === id) || (!id && phone && String(r.phone || '') === phone)) existing = r;
+  });
+  var now = new Date().toISOString();
+  var data = {
+    id: existing ? existing.id : (id || Utilities.getUuid()),
+    name: name, phone: phone, email: email, address: address, notes: notes,
+    createdAt: existing ? existing.createdAt : now, updatedAt: now, active: b.active !== false
+  };
+  if (existing) writeRow_('Customers', existing._row, data); else appendRows_('Customers', [data]);
+  return { customer: data };
 }
 
 function assertUnique_(products, data, id) {
@@ -944,6 +1033,7 @@ function applyOp_(op, req) {
       var r = importProducts_({ products: p.products || [] });
       return r.skipped ? { warning: r.skipped + ' product(s) skipped — SKU already on the sheet' } : {};
     case 'settings': saveSettings_({ settings: p.settings || {} }); return {};
+    case 'customer.save': return saveCustomer_({ customer: p.customer || {} });
     case 'audit': return auditAppend_({ event: p.event || {}, authToken: req.authToken, deviceId: op.deviceId });
     default: throw new Error('Unknown operation: ' + op.type);
   }
