@@ -29,7 +29,9 @@ export function receiptHtml(sale, items, settings = state.settings) {
   return `
   <div class="receipt">
     ${sale.status === "voided" ? '<div class="rc-void">VOID</div>' : ""}
-    <div class="rc-logo">🛒</div>
+    <div class="rc-logo">${settings.receiptLogoUrl || settings.logoUrl
+      ? '<img src="' + esc(settings.receiptLogoUrl || settings.logoUrl) + '" alt="' + esc(settings.storeName || "Store") + '" />'
+      : "🛒"}</div>
     <h2>${esc(settings.storeName)}</h2>
     <div class="rc-center rc-small">${esc(settings.address)}</div>
     <div class="rc-center rc-small">${esc(settings.phone)}${settings.taxId ? " · " + esc(settings.taxId) : ""}</div>

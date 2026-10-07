@@ -162,11 +162,17 @@ export async function mount(el) {
                 ${THEME_PRESETS.map(([c, n]) => `<button type="button" class="swatch" data-color="${c}" title="${n}" style="--c:${c}"></button>`).join("")}
                 <label class="swatch custom" title="Pick any colour"><input type="color" id="colorPick" value="${normalizeColor(state.settings.themeColor)}" /></label>
                 <input class="input input-sm mono" id="colorHex" name="themeColor" value="${normalizeColor(state.settings.themeColor)}" maxlength="7" spellcheck="false" style="width:104px" />
-              </div></div>
+              </div>
+            </div>
+            <div class="field"><label>Overall appearance</label>
+              <div class="segmented full" id="themeModeSeg">${[["light","Light"],["dark","Dark"],["system","System"]].map(([v,l])=>`<label class="seg"><input type="radio" name="themeMode" value="${v}" ${(state.settings.themeMode||"light")===v?"checked":""} />${l}</label>`).join("")}</div>
+            </div>
             <div class="field"><label>Side menu style</label>
               <div class="segmented full" id="sbSeg">${[["light", "Light"], ["brand", "Brand colour"], ["dark", "Dark"]]
                 .map(([v, l]) => `<label class="seg"><input type="radio" name="sidebarTheme" value="${v}" ${(state.settings.sidebarTheme || "light") === v ? "checked" : ""} />${l}</label>`)
                 .join("")}</div></div>
+            <div class="field"><label>Invoice / receipt logo</label><input class="input" type="file" id="settingsReceiptLogo" accept="image/png,image/jpeg,image/webp,image/gif"><span class="hint">Optional separate logo for receipts. The POS logo remains available above.</span></div>
+            <div class="field"><label>Favicon</label><input class="input" type="file" id="settingsFavicon" accept="image/png,image/jpeg,image/webp,image/gif"><span class="hint">Optional browser-tab / shortcut icon.</span></div>
             <div class="field"><label>Product pictures</label>
               <div class="segmented full" id="imgSeg">${[["emoji", "Emoji"], ["photo", "Photos"]]
                 .map(([v, l]) => `<label class="seg"><input type="radio" name="productImageMode" value="${v}" ${(state.settings.productImageMode || "emoji") === v ? "checked" : ""} />${l}</label>`)
@@ -801,8 +807,12 @@ export async function mount(el) {
       values.phoneNumbers = JSON.stringify(phoneRows.filter((p) => String(p.number || "").trim()));
       values.phone = phoneRows.find((p) => String(p.number || "").trim())?.number || "";
       const logoFile = $("#settingsLogo", el)?.files?.[0];
+      const receiptLogoFile = $("#settingsReceiptLogo", el)?.files?.[0];
+      const faviconFile = $("#settingsFavicon", el)?.files?.[0];
       const qrFile = $("#settingsUpiQr", el)?.files?.[0];
       if (logoFile) { const data = await fileToDataUrl(logoFile); const res = await backend.uploadImage({ dataUrl:data, name:"store-logo" }); values.logoUrl = res.url || data; }
+      if (receiptLogoFile) { const data = await fileToDataUrl(receiptLogoFile); const res = await backend.uploadImage({ dataUrl:data, name:"receipt-logo" }); values.receiptLogoUrl = res.url || data; }
+      if (faviconFile) { const data = await fileToDataUrl(faviconFile); const res = await backend.uploadImage({ dataUrl:data, name:"favicon" }); values.faviconUrl = res.url || data; }
       if (qrFile) { const data = await fileToDataUrl(qrFile); const res = await backend.uploadImage({ dataUrl:data, name:"upi-qr" }); values.upiQrUrl = res.url || data; }
       values.themeColor = normalizeColor(values.themeColor);
       const saved = await saveSettings(values);

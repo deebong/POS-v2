@@ -8,6 +8,8 @@ export const DEFAULT_SETTINGS = {
   phoneNumbers: JSON.stringify([{ number: "+91 98765 43210", type: "voice", label: "Store" }]),
   language: "en",
   logoUrl: "",
+  faviconUrl: "",
+  receiptLogoUrl: "",
   upiQrUrl: "",
   taxId: "GSTIN 29ABCDE1234F1Z5",
   currency: "₹",
@@ -15,6 +17,7 @@ export const DEFAULT_SETTINGS = {
   upiId: "",
   receiptFooter: "Thank you for shopping with us! Please visit again.",
   themeColor: "#0f9d58", // brand colour: buttons, icons, highlights
+  themeMode: "light", // light | dark | system
   sidebarTheme: "light", // light | brand | dark
   productImageMode: "emoji", // emoji | photo
   productLabelCode: "qr", // qr | barcode

@@ -106,8 +106,17 @@ function renderOperator() {
   if (name) name.textContent = u?.name || "No operator";
   if (role) role.textContent = `${u?.role ? ({ admin: "Super Admin", manager: "Manager", cashier: "Cashier" }[u.role] || u.role) : "Not signed in"} · Counter 1`;
 }
+function renderBrandLogo() {
+  const el = $("#brandLogo");
+  if (!el) return;
+  const url = String(state.settings.logoUrl || "").trim();
+  el.innerHTML = url
+    ? '<img class="brand-logo-img" src="' + esc(url) + '" alt="' + esc(state.settings.storeName || "Store") + '" />'
+    : icon("bag");
+}
 function applyBrand() {
   applyTheme(state.settings);
+  renderBrandLogo();
   $("#brandName").textContent = state.settings.storeName;
   renderOperator();
   if (current) {
@@ -261,7 +270,7 @@ async function init() {
   if (!currentStaff()) { await loginStaff(); renderOperator(); }
   await dataReady;
   navigate();
-  $("#brandLogo").innerHTML = icon("bag");
+  renderBrandLogo();
   initPwa();
   await singleWindowGuard();
   tickClock();
@@ -288,6 +297,7 @@ async function init() {
   initFolderBackup(() => backend.exportData()).catch(() => {});
   applyTheme(state.settings);
   $("#brandName").textContent = state.settings.storeName;
+  renderBrandLogo();
   renderSync();
   renderInstall();
   window.addEventListener("hashchange", navigate);

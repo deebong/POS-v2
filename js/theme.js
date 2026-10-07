@@ -55,7 +55,12 @@ export function applyTheme(settings = {}) {
   const root = document.documentElement;
   for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
   const sidebar = ["light", "brand", "dark"].includes(settings.sidebarTheme) ? settings.sidebarTheme : "light";
+  const themeMode = ["light", "dark", "system"].includes(settings.themeMode) ? settings.themeMode : "light";
+  const resolvedTheme = themeMode === "system"
+    ? (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+    : themeMode;
   root.setAttribute("data-sidebar", sidebar);
+  root.setAttribute("data-theme", resolvedTheme);
 
   // Keep browser/PWA chrome synchronized with the selected store colour.
   // Chromium/Edge can update the page theme colour immediately; installed
@@ -67,9 +72,12 @@ export function applyTheme(settings = {}) {
   const msTile = document.querySelector('meta[name="msapplication-TileColor"]');
   if (msTile) msTile.setAttribute("content", color);
 
+  const favicon = document.querySelector('link[rel="icon"]');
+  if (favicon && settings.faviconUrl) favicon.href = settings.faviconUrl;
+
   try {
     // Read by the tiny script in index.html so the right colours show before the app loads.
-    localStorage.setItem("pos.theme", JSON.stringify({ vars, sidebar }));
+    localStorage.setItem("pos.theme", JSON.stringify({ vars, sidebar, themeMode: resolvedTheme }));
   } catch {
     /* storage full / disabled */
   }

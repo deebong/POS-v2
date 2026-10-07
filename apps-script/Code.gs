@@ -54,7 +54,7 @@ var SCHEMA = {
   SyncLog: [['opId', 's'], ['appliedAt', 'd'], ['deviceId', 's'], ['type', 's'], ['ok', 'b'], ['message', 's']]
 };
 var SETTING_KEYS = ['storeName', 'address', 'phone', 'phoneNumbers', 'language', 'taxId', 'currency', 'taxLabel', 'upiId', 'upiQrUrl', 'receiptFooter',
-  'themeColor', 'sidebarTheme', 'productImageMode', 'productLabelCode', 'logoUrl', 'installationId', 'installationStatus', 'installedAt'];
+  'themeColor', 'themeMode', 'sidebarTheme', 'productImageMode', 'productLabelCode', 'logoUrl', 'faviconUrl', 'receiptLogoUrl', 'installationId', 'installationStatus', 'installedAt'];
 
 /* ------------------------------------------------------------------ */
 /* HTTP entry points                                                   */
@@ -196,7 +196,11 @@ function initializeInstallation_(req) {
 }
 // Run once in the Apps Script editor during production setup. The returned code is the one-time
 // bootstrap secret used by the POS Staff page to provision the existing local staff accounts.
-function getAuthSetupCode() { return authSetupCode_(); }
+function getAuthSetupCode() {
+  var code = authSetupCode_();
+  console.log('AUTH SETUP CODE: ' + code);
+  return code;
+}
 
 function staffRows_() { ensureAll_(); return readTable_('Staff'); }
 function authSession_(token) {

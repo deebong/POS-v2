@@ -822,3 +822,44 @@ html.nav-collapsed .pos { grid-template-columns: minmax(0, 1fr) 420px; }
 .boot-state .boot-card { max-width: 420px; padding: 28px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); box-shadow: var(--shadow-sm); }
 .boot-state .boot-icon { width: 42px; height: 42px; margin: 0 auto 12px; display: grid; place-items: center; border-radius: 12px; background: var(--primary-50); color: var(--primary); }
 .boot-state .boot-card b { display: block; margin-bottom: 4px; color: var(--text); }
+
+/* Onboarding / branding / responsive settings fixes */
+.brand-logo { overflow: hidden; }
+.brand-logo-img { width: 100%; height: 100%; object-fit: contain; padding: 5px; border-radius: 12px; display: block; background: #fff; }
+.install-brand-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 22px; }
+.install-brand-main, .install-brand-assets { display: grid; gap: 14px; min-width: 0; }
+.install-color-row { display: grid; grid-template-columns: minmax(0,1fr) 52px; gap: 8px; margin-top: 8px; align-items: center; }
+.install-color-row input[type="color"] { width: 52px; height: 40px; padding: 3px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.install-swatches { margin-bottom: 2px; }
+.install-segmented { margin-top: 2px; }
+.install-next-steps { margin: 24px auto; max-width: 560px; text-align: left; padding: 18px 22px; }
+.install-success { max-width: 760px; margin: 0 auto; padding: 46px 56px 54px; }
+.install-success .big { margin-bottom: 14px; }
+.install-success h2 { margin-bottom: 8px; }
+.install-success > .muted { margin-bottom: 8px; }
+.settings-grid { width: 100%; max-width: 1500px; margin-inline: auto; }
+.settings-grid > * { min-width: 0; }
+.settings-grid .card, .settings-grid form { min-width: 0; }
+@media (max-width: 900px) {
+  .install-brand-grid { grid-template-columns: 1fr; }
+  .install-success { padding: 36px 24px 42px; }
+}
+@media (max-width: 640px) {
+  .install-success { padding: 28px 16px 34px; }
+  .install-color-row { grid-template-columns: 1fr 48px; }
+}
+html[data-theme="dark"] {
+  --bg: #0f141c; --surface: #171d27; --surface-2: #1d2531;
+  --border: #2a3442; --border-strong: #3a4656; --text: #f1f5f9;
+  --text-2: #c2ccd8; --muted: #91a0b3;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.25);
+  --shadow: 0 8px 24px rgba(0,0,0,.25); --shadow-lg: 0 24px 60px rgba(0,0,0,.45);
+}
+html[data-theme="dark"] .topbar, html[data-theme="dark"] .sidebar, html[data-theme="dark"] .card,
+html[data-theme="dark"] .modal, html[data-theme="dark"] .install-card { color: var(--text); }
+html[data-theme="dark"] .input, html[data-theme="dark"] .select, html[data-theme="dark"] .textarea {
+  background: var(--surface-2); color: var(--text); border-color: var(--border-strong);
+}
+html[data-theme="dark"] .swatch { border-color: var(--surface); }
+html[data-theme="dark"] .brand-logo-img { background: #fff; }
+html[data-theme="dark"] .modal-foot { background: var(--surface-2); }
