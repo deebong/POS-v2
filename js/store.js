@@ -11,6 +11,7 @@ export const state = {
   settings: { ...DEFAULT_SETTINGS },
   all: [], // every product (incl. inactive)
   products: [], // active products (what the POS sells)
+  customers: [], // persistent customer profiles
   sales: [], // newest first, last HISTORY_DAYS days
   items: new Map(), // saleId -> line items
   meta: {
@@ -46,12 +47,16 @@ function withCount(sale) {
 function ingest(d) {
   state.settings = { ...DEFAULT_SETTINGS, ...(d.settings || {}) };
   setProducts(d.products || []);
+  state.customers = Array.isArray(d.customers) ? d.customers.slice() : [];
   state.items = new Map();
   for (const it of d.saleItems || []) {
     if (!state.items.has(it.saleId)) state.items.set(it.saleId, []);
     state.items.get(it.saleId).push(it);
   }
-  state.sales = (d.sales || []).map(withCount);
+  state.sales = (d.sales || []).map((sale) => ({
+    ...sale,
+    paymentMethod: ["cash", "card", "upi"].includes(sale.paymentMethod) ? sale.paymentMethod : "cash",
+  })).map(withCount);
   sortSales();
   state.meta.spreadsheetUrl = d.spreadsheetUrl || "";
   state.meta.spreadsheetName = d.spreadsheetName || "";
@@ -97,7 +102,17 @@ export async function loadAll() {
  */
 export async function refreshData() {
   if (state.meta.syncing) return false;
-  if (getConfig().mode === "hybrid") await backend.sync().catch(() => null);
+  if (getConfig().mode === "hybrid") {
+    const before = signature();
+    const synced = await backend.sync({ pull: true }).catch(() => null);
+    if (synced?.data) {
+      ingest(synced.data);
+      const changed = signature() !== before;
+      if (changed) emit("data:changed");
+      return changed;
+    }
+    return false;
+  }
   return reloadLocal();
 }
 
@@ -176,6 +191,15 @@ export const uploadImage = (dataUrl, name) => backend.uploadImage({ dataUrl, nam
 
 /** True when the connected Apps Script supports bulk import, photos and colour settings (v1.2+). */
 export const scriptUpToDate = () => getConfig().mode === "local" || versionAtLeast(state.meta.scriptVersion, "1.2.0");
+
+export async function saveCustomer(customer) {
+  const res = await backend.saveCustomer({ customer });
+  const saved = res.customer;
+  const i = state.customers.findIndex((x) => x.id === saved.id);
+  if (i >= 0) state.customers[i] = saved; else state.customers.unshift(saved);
+  window.dispatchEvent(new CustomEvent("data:changed"));
+  return saved;
+}
 
 export async function saveSettings(settings) {
   const res = await backend.saveSettings({ settings });
