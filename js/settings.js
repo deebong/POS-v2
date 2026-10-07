@@ -11,7 +11,7 @@ import { receiptHtml } from "./receipt.js";
 import { importBulk, importProducts, loadAll, reloadLocal, saveSettings, scriptUpToDate, state } from "./store.js";
 import { THEME_PRESETS, applyTheme, normalizeColor } from "./theme.js";
 import { LANGUAGE_OPTIONS } from "./i18n.js";
-import { can, loginStaff } from "./staff.js";
+import { can, loginStaff, ensureOnlineStaffAuth } from "./staff.js";
 import { buildExport, demoPayload, invoiceLinesCsv, invoicesCsv, productsCsv, toPortable } from "./transfer.js";
 import {
   $, choiceDialog, confirmDialog, downloadFile, esc, fmtBytes, hydrateIcons, icon, timeAgo, toast,
@@ -830,7 +830,7 @@ export async function mount(el) {
     const { getAuthToken, clearAuthToken } = await import("./auth.js");
     if (!getAuthToken() || currentStatus()?.authRequired) {
       clearAuthToken();
-      const signed = await loginStaff(true);
+      const signed = await ensureOnlineStaffAuth();
       if (!signed) throw new Error("Google Sheets sign-in is required to save store details.");
     }
   };
@@ -920,7 +920,7 @@ export async function mount(el) {
           if (!isAuthError(syncError)) throw syncError;
           const { clearAuthToken } = await import("./auth.js");
           clearAuthToken();
-          const signed = await loginStaff(true);
+          const signed = await ensureOnlineStaffAuth();
           if (!signed) throw new Error("Google Sheets sign-in is required to sync store details.");
           await backend.sync({ pull: false, throwOnError: true });
         }
