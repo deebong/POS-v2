@@ -88,7 +88,7 @@ export const currentStatus = () => (adapterNow && adapterNow.status ? adapterNow
 
 const METHODS = [
   "bootstrap", "saveProduct", "deleteProduct", "adjustStock", "importProducts", "checkout", "voidSale",
-  "getSale", "saveSettings", "ping", "sync", "exportData", "importData", "clearLog", "resetDemo", "startFresh",
+  "getSale", "saveCustomer", "saveSettings", "ping", "sync", "exportData", "importData", "clearLog", "resetDemo", "startFresh",
   "importBulk", "uploadImage", "backupStatus", "backupSetup", "backupNow", "backupVerify", "backupRestore", "auditAppend", "installationStatus", "initialize", "startFresh",
 ];
 export const backend = Object.fromEntries(
