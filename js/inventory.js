@@ -93,9 +93,7 @@ export function openProductForm(product, { onSaved } = {}) {
     const cloud = getConfig().mode !== "local";
     const hint = modal.$("#phHint");
     const baseHint = cloud
-      ? scriptUpToDate()
-        ? "Photos you choose are uploaded to your Google Drive (folder “FreshMart POS Images”) and the link is saved in the sheet. Drive links must be shared as “Anyone with the link”."
-        : "Update Code.gs to v1.2 to upload photos to Google Drive. Until then photos are stored in the sheet (small size)."
+      ? "Photos you choose are uploaded to your Google Drive (folder “FreshMart POS Images”) when the connected Apps Script supports image upload. If the backend is older, the POS automatically falls back to storing the resized photo in the sheet."
       : "Photos are resized and stored with the product on this PC. You can also paste a web or Google Drive link.";
     const setPhoto = (url) => {
       form.imageUrl.value = url || "";
@@ -119,7 +117,7 @@ export function openProductForm(product, { onSaved } = {}) {
       if (!file) return;
       hint.textContent = "Preparing photo…";
       try {
-        if (cloud && scriptUpToDate() && navigator.onLine) {
+        if (cloud && navigator.onLine) {
           try {
             hint.textContent = "Uploading to Google Drive…";
             const big = await fileToDataUrl(file, { max: 800, limit: 1500000 });
