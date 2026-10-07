@@ -17,6 +17,7 @@ const PIN_LOCK_MS = 15 * 60 * 1000;
 const DEVICE_KEY = "freshmart.auth.device";
 const CRYPTO_KEY = "staff.crypto.key.v1";
 const SERVER_SYNC_KEY = "staff.server-sync.pending.v1";
+const SERVER_AUTH_COOLDOWN_KEY = "freshmart.auth.server-cooldown.v1";
 let serverSyncTimer = null;
 
 function localDeviceId() {
@@ -283,10 +284,34 @@ export async function verifyStaffPin(user, pin) {
 
 let onlineAuthPromise = null;
 
+function serverAuthCooldown(user) {
+  if (!user?.username) return 0;
+  try {
+    const data = JSON.parse(localStorage.getItem(SERVER_AUTH_COOLDOWN_KEY) || "{}");
+    return String(data.username || "").toLowerCase() === String(user.username).toLowerCase() ? Number(data.until) || 0 : 0;
+  } catch {
+    return 0;
+  }
+}
+function setServerAuthCooldown(user, ms) {
+  if (!user?.username) return;
+  try {
+    localStorage.setItem(SERVER_AUTH_COOLDOWN_KEY, JSON.stringify({
+      username: String(user.username).toLowerCase(),
+      until: Date.now() + ms,
+    }));
+  } catch {}
+}
+function clearServerAuthCooldown() {
+  try { localStorage.removeItem(SERVER_AUTH_COOLDOWN_KEY); } catch {}
+}
+
 async function authenticateServer(user = currentStaff()) {
   await initStaff();
   const cfg = getConfig();
   if (!user || !navigator.onLine || cfg.mode === "local" || !cfg.url) return false;
+  const cooldown = serverAuthCooldown(user);
+  if (cooldown > Date.now()) return false;
   const { getAuthToken } = await import("./auth.js");
   if (getAuthToken()) return true;
   if (onlineAuthPromise) return onlineAuthPromise;
@@ -294,14 +319,30 @@ async function authenticateServer(user = currentStaff()) {
     const localHash = user.pinHash || "";
     if (!localHash) throw new Error("The local staff credential is unavailable.");
     const { onlineLogin } = await import("./auth.js");
-    const serverUser = await onlineLogin(user.username, "", {
-      pinHash: localHash,
-      pinSalt: user.pinSalt,
-      pinIterations: ITERATIONS,
-    });
-    if (serverUser.id !== user.id) throw new Error("Server staff identity does not match this counter.");
-    sessionStorage.removeItem("freshmart.auth.offline");
-    return true;
+    try {
+      const serverUser = await onlineLogin(user.username, "", {
+        pinHash: localHash,
+        pinSalt: user.pinSalt,
+        pinIterations: ITERATIONS,
+      });
+      if (serverUser.id !== user.id) throw new Error("Server staff identity does not match this counter.");
+      clearServerAuthCooldown();
+      sessionStorage.removeItem("freshmart.auth.offline");
+      return true;
+    } catch (e) {
+      const message = String(e?.message || e || "");
+      // Never hammer Apps Script after a credential mismatch/lockout. The server itself
+      // counts failed PIN attempts, so automatic retries can make a valid account look
+      // maliciously abusive and extend the lockout. Transport failures get a shorter backoff.
+      if (/Invalid username or PIN|temporarily locked|identity does not match/i.test(message)) {
+        setServerAuthCooldown(user, 15 * 60 * 1000);
+      } else if (/took too long|Couldn't reach Google Sheets|Failed to fetch|NetworkError|Load failed|non-JSON/i.test(message)) {
+        setServerAuthCooldown(user, 60 * 1000);
+      } else {
+        setServerAuthCooldown(user, 5 * 60 * 1000);
+      }
+      throw e;
+    }
   })().finally(() => { onlineAuthPromise = null; });
   return onlineAuthPromise;
 }
