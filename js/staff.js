@@ -77,10 +77,13 @@ async function makePin(pin) {
   const salt = randomBytes();
   return { pinSalt: bytesToB64(salt), pinHash: await hashPin(pin, salt) };
 }
+async function getPinVerifier(user, pin) {
+  if (!user?.pinHash || !user.pinSalt) return "";
+  return hashPin(pin, b64ToBytes(user.pinSalt));
+}
 async function verifyPin(user, pin) {
-  if (!user?.pinHash || !user.pinSalt) return false;
-  const hash = await hashPin(pin, b64ToBytes(user.pinSalt));
-  return hash === user.pinHash;
+  const hash = await getPinVerifier(user, pin);
+  return !!hash && hash === user.pinHash;
 }
 
 export function activeUsers() { return users.filter(u => u.active); }
@@ -205,11 +208,12 @@ export async function provisionInitialAdmin({ id = "", name, username, phone = "
 
 async function signIn(user, pin) {
   if (!user?.active) throw new Error("This staff account is inactive.");
-  if (!(await verifyPin(user, pin))) throw new Error("Incorrect PIN.");
+  const localHash = await getPinVerifier(user, pin);
+  if (!localHash || localHash !== user.pinHash) throw new Error("Incorrect PIN.");
   const cfg = (() => { try { return JSON.parse(localStorage.getItem("pos.backend.v1") || "{}"); } catch { return {}; } })();
   if (navigator.onLine && cfg.mode && cfg.mode !== "local" && cfg.url) {
     const { onlineLogin } = await import("./auth.js");
-    const serverUser = await onlineLogin(user.username, pin);
+    const serverUser = await onlineLogin(user.username, pin, { pinHash: localHash, pinSalt: user.pinSalt, pinIterations: ITERATIONS });
     if (serverUser.id !== user.id) throw new Error("Server staff identity does not match this counter.");
   }
   currentId = user.id;
@@ -346,7 +350,13 @@ export async function loginStaff() {
       } catch (e) {
         const message = e.message || "Sign-in failed.";
         if (user && /^Invalid username or PIN\.?$/.test(message) && getConfig().mode !== "local") {
-          err.textContent = "Your local PIN is valid, but the Google Sheets staff credential is out of sync.";
+          try {
+            await syncServerStaff();
+            const signed = await signIn(user, pin);
+            completed = true; m.close(); resolve(signed); return;
+          } catch (syncError) {
+            err.textContent = "Staff credentials were synchronized locally, but the server rejected the login. An administrator may need to reconnect this counter.";
+          }
           m.$("#loginRepair").style.display = "block";
           setTimeout(() => m.$("#loginSetupCode")?.focus(), 40);
         } else {
@@ -482,9 +492,29 @@ async function openEditor(existing=null) {
     if(!editing && users.some(u=>u.username===username))return toast("That username is already in use.","error");
     const btn=m.$("#sfSave");btn.disabled=true;
     try{
-      if(editing){Object.assign(existing,{name,role,phone,updatedAt:now()});await persist();await syncServerStaffIfInitialized();toast("Staff account updated");}
-      else{const pin=m.$("#sfPin").value.trim();if(!/^\d{4,12}$/.test(pin)){btn.disabled=false;return toast("Use a numeric PIN with 4–12 digits.","error");}const hashes=await makePin(pin);users.push({id:uid(),name,username,role,phone,active:true,createdAt:now(),updatedAt:now(),lastLoginAt:null,...hashes,mustChangePin:true});await persist();await syncServerStaffIfInitialized();toast("Staff account created");}
-      m.close();render();
+      if(editing){
+        Object.assign(existing,{name,role,phone,updatedAt:now()});
+        await persist();
+        m.close(); render();
+        toast("Staff account updated");
+        syncServerStaffIfInitialized();
+      } else {
+        const pin=m.$("#sfPin").value.trim();
+        if(!/^\d{4,12}$/.test(pin)){btn.disabled=false;return toast("Use a numeric PIN with 4–12 digits.","error");}
+        const hashes=await makePin(pin);
+        users.push({id:uid(),name,username,role,phone,active:true,createdAt:now(),updatedAt:now(),lastLoginAt:null,...hashes,mustChangePin:true});
+        await persist();
+        const cfg = (() => { try { return JSON.parse(localStorage.getItem("pos.backend.v1") || "{}"); } catch { return {}; } })();
+        if (navigator.onLine && cfg.mode && cfg.mode !== "local" && cfg.url) {
+          try {
+            await syncServerStaff();
+          } catch (syncError) {
+            toast("Staff account saved locally, but Google Sheets sync failed: " + (syncError.message || syncError), "warn");
+          }
+        }
+        m.close(); render();
+        toast("Staff account created");
+      }
     }catch(e){btn.disabled=false;toast(e.message||"Could not save staff account.","error");}
   };
 }
