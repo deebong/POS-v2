@@ -24,17 +24,21 @@ export async function authStatus() {
   return adapter().authStatus();
 }
 
-export async function onlineLogin(username, pin) {
+export async function onlineLogin(username, pin, options = {}) {
   const api = adapter();
-  const challenge = await api.authChallenge({ username });
-  const pinHash = await derivePinHash(pin, challenge.pinSalt, challenge.pinIterations);
-  const response = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${pinHash}:${challenge.nonce}`));
+  const localHash = options.pinHash || "";
+  const nonce = (globalThis.crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`) + `-${Math.random().toString(36).slice(2)}`;
+  let pinHash = localHash;
+  if (!pinHash) {
+    const challenge = await api.authChallenge({ username });
+    pinHash = await derivePinHash(pin, challenge.pinSalt, challenge.pinIterations);
+  }
+  const response = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${pinHash}:${nonce}`));
   const hex = [...new Uint8Array(response)].map((b) => b.toString(16).padStart(2, "0")).join("");
-  const result = await api.authLogin({ username, nonce: challenge.nonce, response: hex, deviceId: deviceId() });
+  const result = await api.authLogin({ username, nonce, response: hex, deviceId: deviceId() });
   sessionStorage.setItem(TOKEN_KEY, result.token);
   return result.staff;
 }
-
 export async function onlineLogout() {
   try { if (getAuthToken()) await adapter().authLogout(); } finally { clearAuthToken(); }
 }
