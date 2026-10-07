@@ -255,7 +255,17 @@ function authChallenge_(req) {
   var username = str_(req.username, 60).toLowerCase();
   var user = staffRows_().find(function (u) { return u.username.toLowerCase() === username; });
   if (!user || !user.active) throw new Error('Invalid username or PIN.');
-  if (user.lockedUntil && new Date(user.lockedUntil).getTime() > Date.now()) throw new Error('This account is temporarily locked. Try again later.');
+  if (user.lockedUntil) {
+    var lockUntil = new Date(user.lockedUntil).getTime();
+    if (lockUntil > Date.now()) {
+      var remainingMinutes = Math.max(1, Math.ceil((lockUntil - Date.now()) / 60000));
+      throw new Error('This account is temporarily locked. Try again in ' + remainingMinutes + ' minute' + (remainingMinutes === 1 ? '' : 's') + '.');
+    }
+    // A previous lock has expired. Clear stale lock state before evaluating the PIN.
+    user.failedAttempts = 0;
+    user.lockedUntil = null;
+    writeRow_('Staff', user._row, user);
+  }
   var nonce = Utilities.getUuid() + Utilities.getUuid();
   return { staffId: user.id, username: user.username, name: user.name, role: user.role, pinSalt: user.pinSalt, pinIterations: Number(user.pinIterations) || 120000, nonce: nonce };
 }
@@ -288,7 +298,16 @@ function authLogin_(req) {
   var user = rows.find(function (u) { return u.username.toLowerCase() === username; });
   if (!user || !user.active) throw new Error('Invalid username or PIN.');
   if (PropertiesService.getScriptProperties().getProperty(authDeviceKey_(str_(req.deviceId, 120))) === 'true') throw new Error('This device has been revoked. Contact an administrator.');
-  if (user.lockedUntil && new Date(user.lockedUntil).getTime() > Date.now()) throw new Error('This account is temporarily locked. Try again later.');
+  if (user.lockedUntil) {
+    var lockUntil = new Date(user.lockedUntil).getTime();
+    if (lockUntil > Date.now()) {
+      var remainingMinutes = Math.max(1, Math.ceil((lockUntil - Date.now()) / 60000));
+      throw new Error('This account is temporarily locked. Try again in ' + remainingMinutes + ' minute' + (remainingMinutes === 1 ? '' : 's') + '.');
+    }
+    user.failedAttempts = 0;
+    user.lockedUntil = null;
+    writeRow_('Staff', user._row, user);
+  }
   var expected = authSha_(String(user.pinHash) + ':' + String(req.nonce || ''));
   if (!req.response || expected !== String(req.response)) {
     user.failedAttempts = Number(user.failedAttempts) + 1;
@@ -333,7 +352,12 @@ function authSyncStaff_(req) {
       role: ['admin','manager','cashier'].indexOf(u.role) >= 0 ? u.role : 'cashier', active: u.active !== false,
       pinSalt: str_(u.pinSalt, 200), pinHash: str_(u.pinHash, 200), pinIterations: Number(u.pinIterations) || 120000,
       mustChangePin: !!u.mustChangePin, createdAt: existing ? existing.createdAt : now, updatedAt: now,
-      lastLoginAt: existing ? existing.lastLoginAt : null, failedAttempts: existing ? Number(existing.failedAttempts) || 0 : 0, lockedUntil: existing ? existing.lockedUntil : null
+      lastLoginAt: existing ? existing.lastLoginAt : null,
+      // A valid one-time setup code is an explicit recovery operation. It must
+      // also clear server-side lockout state, otherwise the repaired credential
+      // remains unusable until the old lock timer expires.
+      failedAttempts: setupCodeValid ? 0 : (existing ? Number(existing.failedAttempts) || 0 : 0),
+      lockedUntil: setupCodeValid ? null : (existing ? existing.lockedUntil : null)
     };
     if (existing && existing.id !== data.id) throw new Error('Username is already assigned to another staff account.');
     if (existing) writeRow_('Staff', existing._row, data); else appendRows_('Staff', [data]);

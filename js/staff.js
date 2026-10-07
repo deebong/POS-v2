@@ -372,14 +372,11 @@ export async function loginStaff() {
         completed = true; m.close(); resolve(signed);
       } catch (e) {
         const message = e.message || "Sign-in failed.";
-        if (user && /^Invalid username or PIN\.?$/.test(message) && getConfig().mode !== "local") {
-          try {
-            await syncServerStaff();
-            const signed = await signIn(user, pin);
-            completed = true; m.close(); resolve(signed); return;
-          } catch (syncError) {
-            err.textContent = "Staff credentials were synchronized locally, but the server rejected the login. An administrator may need to reconnect this counter.";
-          }
+        if (user && /^(Invalid username or PIN\.?|This account is temporarily locked\b)/.test(message) && getConfig().mode !== "local") {
+          // Do not attempt an unauthenticated server staff sync here. authSyncStaff
+          // is intentionally protected and would create a circular recovery path.
+          // Instead, expose the explicit one-time setup-code recovery.
+          err.textContent = message;
           m.$("#loginRepair").style.display = "block";
           setTimeout(() => m.$("#loginSetupCode")?.focus(), 40);
         } else {
@@ -401,7 +398,7 @@ export async function loginStaff() {
         const signed = await signIn(repairTarget, pin);
         completed = true; m.close(); resolve(signed);
       } catch (e) {
-        err.textContent = e.message || "Server repair failed.";
+        m.$("#loginError").textContent = e.message || "Server repair failed.";
         b.disabled = false;
       }
     };
