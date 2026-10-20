@@ -1,37 +1,30 @@
-## Deployment repository status — 21 October 2026
+## Current project status — 21 October 2026
 
-This repository is the **public, production-facing static frontend copy** of the FreshMart POS application. It is not the authoritative source repository and is not the correct place for ordinary development or acceptance testing.
+> **Status distinction:** the feature screens and local workflows are not the same as a fully verified production POS. This source repository is the authoritative development source; staging acceptance is expected to use `deebong/POS-v2-staging` and the disposable `POS_test_v1` Google Sheet. Do not treat a green CI run as proof of live Google Sheets, physical hardware, security, or every end-to-end workflow.
 
-- **Authoritative source:** [deebong/POS-platform-v2](https://github.com/deebong/POS-platform-v2)
-- **Staging/acceptance deployment:** [deebong/POS-v2-staging](https://github.com/deebong/POS-v2-staging)
-- **This repository's Pages site:** https://deebong.github.io/POS-v2/
-- **Test data:** use the isolated staging deployment with its designated disposable Sheet for development acceptance.
+### Repository and deployment roles
+- **Private source:** `deebong/POS-platform-v2` — runtime source under `public/pos/`, Apps Script source, tests, release workflows and regression log.
+- **Staging deployment:** `deebong/POS-v2-staging` — isolated public staging frontend for acceptance tests only.
+- **Production-facing static repository:** `deebong/POS-v2` — public frontend repository. This was updated by an automated publish workflow after a push to `main`; do not infer that it was a deliberate release approval.
+- **Staging data:** only use the disposable `POS_test_v1` Sheet and its dedicated Apps Script deployment. Keep an explicit private mapping from Sheet to deployment URL and candidate commit.
 
-### Deployment status and caution
+### Known limitations still requiring verification
+- Cash Drawer, Day Close and Audit Log are implemented locally but do not yet have equivalent central Google Sheets schemas/sync in the documented backend.
+- Loyalty has a local module, but complete checkout earning/redemption/reversal and a central ledger remain incomplete.
+- Staff/role UI exists, but server-authoritative authentication, session expiry and fully verified multi-device/store isolation remain release risks.
+- Gateway labels/tender options are not a live payment-gateway integration.
+- Browser-based scanning/printing does not certify ESC/POS, weighing-machine, drawer-pulse or other hardware compatibility.
+- Settings persistence, operator switching/navigation refresh, backup/restore, live returns/stock adjustment, PWA cache/update behavior, Tamil output and physical printing require explicit acceptance evidence.
 
-This repository was updated by an automated publish workflow following a successful push to the source repository's `main` branch. That is a deployment fact, not evidence that a human explicitly approved a release or that every live workflow passed acceptance. Check the current service-worker version and commit history when identifying the deployed build.
+### Required release practice
+1. Keep source changes in a single identified candidate branch; record the exact commit in `docs/REGRESSION-AND-RELEASE-LOG.md`.
+2. Test and deploy the candidate to `POS-v2-staging` first using disposable data.
+3. Mark each acceptance item as code-present, automated-test-passed, live-backend-verified, target-device-verified or unknown.
+4. Do not publish production as a side effect of normal development. Verify workflow conditions and require an explicit production release decision.
+5. Do not create another disposable Sheet unless a specific test requires it; map existing Sheets/deployments before starting a fresh installation.
 
-Do not push manual fixes directly here. Fix source in `POS-platform-v2`, run relevant tests, and publish candidates to staging first. Production publishing must require an explicit release decision and must not happen automatically merely because development CI passed.
-
-### Feature status (not a certification)
-
-The deployed frontend contains UI and local workflows for Dashboard, Billing, Inventory, Product Labels, Invoices/Sales, Customers, Suppliers/Purchases, Returns/Exchanges, Cash Drawer, Day Close, Audit Log, Low Stock, Reports, Loyalty, Staff/Users and Settings. Actual completeness differs by module:
-
-- Cash Drawer, Day Close, Audit Log and parts of Loyalty are local-first/local-only in the documented implementation; central Sheets sync is not complete for these records.
-- Loyalty checkout earn/redeem/reversal and its central ledger remain incomplete.
-- Server-authoritative staff authentication, session enforcement and fully verified multi-store/multi-counter isolation are not certified.
-- Cash/card/UPI tender selection does not by itself implement live payment gateways.
-- Browser scanning and print flows do not guarantee support for physical thermal printers, weighing machines, cash-drawer pulses or every scanner.
-- PWA installation/offline code exists, but cache activation, reload/reinstall, sync recovery and target-device behavior still need acceptance testing.
-- Settings persistence, operator switching/role-based sidebar refresh, live returns and stock effects, backup/restore, Tamil output, receipts/GST exports and physical label printing must be checked against the staging acceptance checklist.
-
-### Planned features remain in scope
-
-This deployment README does not remove or redefine the roadmap maintained in the private source repository. Planned extensions include multiple payment gateway integration; delivery/logistics; finance/expense tracking; thermal printers, barcode/QR scanners and weighing-machine integration; client/industry-specific dashboard themes; guided non-technical onboarding; enable/disable plugin modules; grocery product-image tooling; Tally migration; ERP/accounting and other app integrations; multi-store functionality and additional industry-specific workflows.
-
-### Acceptance and support
-
-A green automated workflow verifies only the assertions covered by its tests. It does not certify live Google Sheets permissions/data, production-grade access controls, all devices or physical hardware. Use the regression ledger in the source repository and the isolated staging environment to record evidence before any production release.
+### Installation wizard status
+The setup process has covered store profile, administrator identity, storage/backend connection, language/preferences, branding and completion/review areas. The wizard's step count and complete behavior have varied; do not assume six independent steps or all fields are fully working without checking staging. Verify that admin identity, configured phone, branding/tagline and storage settings persist after setup, navigation, reload and re-login. If the backend says it is already installed, identify the connected Sheet/deployment before attempting recovery; do not bypass the warning.
 
 ---
 
