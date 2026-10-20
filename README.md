@@ -47,7 +47,9 @@ A grocery Point-of-Sale application built as an installable PWA with a plain HTM
 
 ---
 
-## Implemented modules
+## Module inventory — code presence versus acceptance status
+
+The table below records features present in the UI/codebase. “Implemented” does not mean every path is verified against a live Sheet, multiple devices or physical hardware. Known backend, security and acceptance gaps are listed in the current status section above.
 
 The current navigation and implementation contain these modules:
 
@@ -61,14 +63,14 @@ The current navigation and implementation contain these modules:
 | Customers | Implemented | Customer directory derived from sales, purchase counts, spend, average bill and invoice history |
 | Suppliers & Purchases | Implemented | Supplier directory, supplier CRUD, activate/deactivate, purchase receiving, purchase history and incoming stock |
 | Returns & Exchanges | Implemented | Invoice lookup, partial returns, exchanges, refund/difference calculation, stock restoration, replacement stock validation and return history |
-| Cash Drawer | Implemented locally | Open/close drawer, opening float, cash in/out, expected cash, counted cash, variance and previous sessions |
-| Day Close | Implemented locally | Business-date reconciliation, sales/payment/refund/tax summary, drawer reconciliation, completed-sales history, CSV export and finalization |
-| Audit Log | Implemented locally | Operator activity history, filters, search, CSV export and local clearing |
+| Cash Drawer | Local workflow present; central sync incomplete | Open/close drawer, opening float, cash in/out, expected cash, counted cash, variance and previous sessions |
+| Day Close | Local workflow present; central sync incomplete | Business-date reconciliation, sales/payment/refund/tax summary, drawer reconciliation, completed-sales history, CSV export and finalization |
+| Audit Log | Local workflow present; central audit sync incomplete | Operator activity history, filters, search, CSV export and local clearing |
 | Low Stock | Implemented | Out-of-stock/low-stock detection, reorder gap, cost value, filters, search, restock action and CSV export |
-| Reports | Implemented | Date-range sales report, net sales, average bill, refunds, payment methods, sales by day, top products, reconciliation and CSV export |
-| Loyalty | Implemented locally | Member directory, earn-rate configuration, tiers, points balance, member ledger, manual adjustments, redemption and CSV export |
-| Staff & Users | Implemented locally | Staff directory, Admin/Manager/Cashier roles, permission model, salted PBKDF2 PINs, operator switching, activation/deactivation and PIN reset |
-| Settings | Implemented | Storage mode, Google Sheets connection, import/export, store profile, appearance, product image settings, backup/offline controls and app installation support |
+| Reports | Basic reports present; advanced reports incomplete | Date-range sales report, net sales, average bill, refunds, payment methods, sales by day, top products, reconciliation and CSV export |
+| Loyalty | Local module present; checkout integration and central ledger incomplete | Member directory, earn-rate configuration, tiers, points balance, member ledger, manual adjustments, redemption and CSV export |
+| Staff & Users | Local role/PIN UI present; server-authoritative sessions incomplete | Staff directory, Admin/Manager/Cashier roles, permission model, salted PBKDF2 PINs, operator switching, activation/deactivation and PIN reset |
+| Settings | Present; persistence and install-flow acceptance pending | Storage mode, Google Sheets connection, import/export, store profile, appearance, product image settings, backup/offline controls and app installation support |
 
 ### Recent stability fixes
 
@@ -82,7 +84,9 @@ The affected tables now use an isolated scroll/paint context, opaque sticky head
 
 ---
 
-## Detailed development audit — 1 October 2026
+## Historical development audit — 1 October 2026 (baseline, not current status)
+
+> This section records the state and recommendations as of 1 October 2026. It is retained for history, but it is **not a current status report**. The current implementation, remaining gaps and next actions are summarized in the 21 October 2026 status section at the top of this README. Items below may have been implemented, changed or superseded since the baseline; verify against the current code and regression log before acting on them.
 
 The UI/module set is now substantially complete for the current POS scope. The remaining work is primarily **production integration, security, multi-counter consistency and operational hardening**, rather than adding another basic screen immediately.
 
@@ -392,7 +396,9 @@ Cash Drawer, Day Close, Audit Log and Loyalty do not yet have equivalent central
 
 ---
 
-## File structure
+## File structure — source tree guide
+
+This structure is a guide to the runtime layout, not a claim that every listed module is complete. The actual tree has evolved since the original 1 October audit; verify paths against the current branch before making changes.
 
 ```text
 POS-platform-v2/
@@ -423,10 +429,18 @@ POS-platform-v2/
 │   │   ├── cash-drawer.css      Cash Drawer
 │   │   ├── eod-closing.css      Day Close
 │   │   ├── audit-log.css        Audit Log
-│   │   └── loyalty.css          Loyalty
+│   │   ├── loyalty.css          Loyalty
+│   │   └── staff.css            Staff & Users
 │   │
 │   ├── js/
 │   │   ├── app.js               Router, shell, navigation guards and sync status
+│   │   ├── auth.js              Local authentication/session helpers
+│   │   ├── staff.js             Staff and role management
+│   │   ├── approval.js          Approval/manager authorization workflow
+│   │   ├── installation.js      First-run setup flow
+│   │   ├── i18n.js              Language/localization helpers
+│   │   ├── returns.js           Returns helpers
+│   │   └── gst-bill.js          GST bill/export workflow
 │   │   ├── dashboard.js         Dashboard
 │   │   ├── pos.js               POS / Billing
 │   │   ├── inventory.js         Inventory
@@ -491,7 +505,7 @@ POS-platform-v2/
     └── lib/                          Preview-host utilities
 ```
 
-The file structure above reflects the repository audited on **1 October 2026**. New modules should be added to the corresponding `public/pos/js` and `public/pos/css` locations and wired through `app.js` rather than creating a second application architecture.
+The file structure above is a high-level guide updated for the modules now present in the repository; it is not an exhaustive generated tree. The original 1 October 2026 audit is retained as historical context only. New modules should be added to the corresponding `public/pos/js` and `public/pos/css` locations and wired through `app.js` rather than creating a second application architecture.
 
 ---
 
@@ -680,7 +694,9 @@ The current demo operator is **Anand Ibrahim / Anand I**, Counter 1. This is not
 
 ---
 
-## Recommended next development order
+## Historical recommended development order — 1 October baseline
+
+The following order was proposed in the original audit and is retained as historical context. It is not a current work queue; consult the 21 October status section and regression log for current priorities.
 
 Based on the 1 October 2026 audit, the recommended engineering sequence is:
 
