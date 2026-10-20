@@ -1,3 +1,40 @@
+## Deployment repository status — 21 October 2026
+
+This repository is the **public, production-facing static frontend copy** of the FreshMart POS application. It is not the authoritative source repository and is not the correct place for ordinary development or acceptance testing.
+
+- **Authoritative source:** [deebong/POS-platform-v2](https://github.com/deebong/POS-platform-v2)
+- **Staging/acceptance deployment:** [deebong/POS-v2-staging](https://github.com/deebong/POS-v2-staging)
+- **This repository's Pages site:** https://deebong.github.io/POS-v2/
+- **Test data:** use the isolated staging deployment with its designated disposable Sheet for development acceptance.
+
+### Deployment status and caution
+
+This repository was updated by an automated publish workflow following a successful push to the source repository's `main` branch. That is a deployment fact, not evidence that a human explicitly approved a release or that every live workflow passed acceptance. Check the current service-worker version and commit history when identifying the deployed build.
+
+Do not push manual fixes directly here. Fix source in `POS-platform-v2`, run relevant tests, and publish candidates to staging first. Production publishing must require an explicit release decision and must not happen automatically merely because development CI passed.
+
+### Feature status (not a certification)
+
+The deployed frontend contains UI and local workflows for Dashboard, Billing, Inventory, Product Labels, Invoices/Sales, Customers, Suppliers/Purchases, Returns/Exchanges, Cash Drawer, Day Close, Audit Log, Low Stock, Reports, Loyalty, Staff/Users and Settings. Actual completeness differs by module:
+
+- Cash Drawer, Day Close, Audit Log and parts of Loyalty are local-first/local-only in the documented implementation; central Sheets sync is not complete for these records.
+- Loyalty checkout earn/redeem/reversal and its central ledger remain incomplete.
+- Server-authoritative staff authentication, session enforcement and fully verified multi-store/multi-counter isolation are not certified.
+- Cash/card/UPI tender selection does not by itself implement live payment gateways.
+- Browser scanning and print flows do not guarantee support for physical thermal printers, weighing machines, cash-drawer pulses or every scanner.
+- PWA installation/offline code exists, but cache activation, reload/reinstall, sync recovery and target-device behavior still need acceptance testing.
+- Settings persistence, operator switching/role-based sidebar refresh, live returns and stock effects, backup/restore, Tamil output, receipts/GST exports and physical label printing must be checked against the staging acceptance checklist.
+
+### Planned features remain in scope
+
+This deployment README does not remove or redefine the roadmap maintained in the private source repository. Planned extensions include multiple payment gateway integration; delivery/logistics; finance/expense tracking; thermal printers, barcode/QR scanners and weighing-machine integration; client/industry-specific dashboard themes; guided non-technical onboarding; enable/disable plugin modules; grocery product-image tooling; Tally migration; ERP/accounting and other app integrations; multi-store functionality and additional industry-specific workflows.
+
+### Acceptance and support
+
+A green automated workflow verifies only the assertions covered by its tests. It does not certify live Google Sheets permissions/data, production-grade access controls, all devices or physical hardware. Use the regression ledger in the source repository and the isolated staging environment to record evidence before any production release.
+
+---
+
 # FreshMart POS
 
 A grocery Point-of-Sale application built as an installable PWA with a plain HTML/CSS/JavaScript runtime, offline-first local storage, and optional Google Sheets synchronization.
