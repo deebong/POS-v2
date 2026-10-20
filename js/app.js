@@ -20,7 +20,7 @@ import * as reports from "./reports.js";
 import * as loyalty from "./loyalty.js";
 import * as staff from "./staff.js";
 import { initStaff, currentStaff, loginStaff, switchOperator, openOperatorMenu, can, refreshStaffSession } from "./staff.js";
-import { clearAuthToken } from "./auth.js";
+import { clearAuthToken, getAuthToken } from "./auth.js";
 import { openScanner } from "./scanner.js";
 import * as settings from "./settings.js";
 import { applySharedStoreConfigFromUrl, checkInstallation, showInstallationWizard } from "./installation.js";
@@ -74,6 +74,21 @@ async function navigate() {
   const name = location.hash.replace(/^#\/?/, "").split("?")[0] || "dashboard";
   const key = routes[name] ? name : "dashboard";
   const route = routes[key];
+  const requiredPermission = NAV_PERMISSION[key] || key;
+  // Never leave the previous page DOM visible after logout, session expiry, or a
+  // rejected server identity; that DOM may contain sensitive business data.
+  if (!currentStaff()) {
+    const view = $("#view");
+    if (view) view.innerHTML = `<div class="empty"><div class="big">${icon("lock")}</div><h4>Sign in required</h4><p>Sign in with an active staff account to continue.</p></div>`;
+    return;
+  }
+  // Route authorization must run before a page module is mounted. Hiding navigation
+  // links alone is not an access control: users can type a route hash directly.
+  if (!can(requiredPermission)) {
+    toast("Access denied. Your staff role cannot open this page.", "error");
+    if (location.hash !== "#/dashboard") location.hash = "#/dashboard";
+    return;
+  }
   if (current && current.mod.unmount) current.mod.unmount();
   const old = document.getElementById("view");
   const view = old.cloneNode(false);
@@ -106,8 +121,11 @@ function renderOperator() {
   const u = currentStaff();
   const name = $("#cashierName");
   const role = $("#cashierRole");
-  if (name) name.textContent = u?.name || "No operator";
+  const avatar = $("#cashierAvatar") || document.querySelector(".cashier-card .avatar");
+  const displayName = u?.name || "No operator";
+  if (name) name.textContent = displayName;
   if (role) role.textContent = `${u?.role ? ({ admin: "Super Admin", manager: "Manager", cashier: "Cashier" }[u.role] || u.role) : "Not signed in"} · Counter 1`;
+  if (avatar) avatar.textContent = u?.name ? u.name.trim().split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join("").toUpperCase() : "—";
 }
 function applyFavicon() {
   const link = document.querySelector('link[rel="icon"]');
@@ -124,7 +142,12 @@ function renderBrandLogo() {
     ? '<img class="brand-logo-img" src="' + esc(state.settings.logoUrl) + '" alt="' + esc(state.settings.storeName || "Store") + '" />'
     : icon("bag");
   $("#brandName").textContent = state.settings.storeName || "FreshMart";
-  $("#brandSub").textContent = state.settings.brandTagline || "Grocery POS";
+  const sub = $("#brandSub");
+  if (sub) {
+    const tagline = String(state.settings.brandTagline ?? "").trim();
+    sub.textContent = tagline;
+    sub.hidden = !tagline;
+  }
 }
 function applyBrand() {
   applyTheme(state.settings);
@@ -146,6 +169,9 @@ function tickClock() {
 const hhmm = (d) => (d ? new Date(d).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "…");
 function renderSync() {
   const mode = getConfig().mode, m = state.meta, st = currentStatus() || {}, pill = $("#syncPill"), txt = $("#syncText"), banner = $("#banner");
+  // Sync rendering can be called during shell transitions; avoid dereferencing nodes
+  // if the app shell is temporarily unavailable (e.g. a reload/update transition).
+  if (!pill || !txt || !banner) return;
   pill.className = "sync-pill";
   let bannerHtml = "", bannerKind = "";
   if (mode === "local") {
@@ -299,6 +325,29 @@ async function init() {
     });
     renderOperator();
   }
+  const cloudConfigured = getConfig().mode !== "local" && !!getConfig().url;
+  if (!currentStaff()) {
+    document.body.classList.add("auth-locked");
+    await loginStaff();
+  } else if (navigator.onLine && cloudConfigured && !getAuthToken()) {
+    document.body.classList.add("auth-locked");
+    await loginStaff(true);
+  }
+  document.body.classList.toggle("auth-locked", !currentStaff());
+  renderOperator();
+  let authExpiryInProgress = false;
+  window.addEventListener("auth:expired", async () => {
+    if (authExpiryInProgress || getConfig().mode === "local") return;
+    authExpiryInProgress = true;
+    document.body.classList.add("auth-locked");
+    try {
+      await logoutStaff();
+      location.hash = "#/dashboard";
+      await loginStaff(true);
+    } finally {
+      authExpiryInProgress = false;
+    }
+  });
   const dataReady = (async () => {
     try {
       await loadAll();
@@ -307,7 +356,6 @@ async function init() {
       // Hybrid mode is offline-first: represent sync failures in the single status/banner state.
     }
   })();
-  if (!currentStaff()) { await loginStaff(); renderOperator(); }
   await dataReady;
   navigate();
   renderBrandLogo();
@@ -320,13 +368,32 @@ async function init() {
   // When background server authentication completes after local sign-in, immediately
   // retry the durable hybrid queue so a transient auth race cannot leave the banner stuck.
   window.addEventListener("staff:server-auth", (e) => {
-    if (!e.detail?.ok || getConfig().mode !== "hybrid" || !navigator.onLine) return;
+    if (!e.detail?.ok || getConfig().mode === "local" || !navigator.onLine) return;
+    // Re-fetch role-scoped cloud data after an operator signs in or switches roles.
     refreshData().finally(() => renderSync());
   });
   window.addEventListener("data:changed", applyDataChange);
   window.addEventListener("settings:changed", () => { applyBrand(); applyLanguage(document, state.settings.language); });
   window.addEventListener("language:preview", (e) => applyLanguage(document, e.detail?.language || "en"));
-  window.addEventListener("staff:changed", renderOperator);
+  window.addEventListener("staff:switched", () => {
+    renderOperator();
+    document.body.classList.toggle("auth-locked", !currentStaff());
+    // Always land on a newly mounted dashboard after changing operators, even when
+    // the current route is already the dashboard (hashchange would not fire then).
+    if (location.hash === "#/dashboard") navigate();
+    else location.hash = "#/dashboard";
+  });
+  window.addEventListener("staff:changed", () => {
+    renderOperator();
+    if (!currentStaff()) {
+      document.body.classList.add("auth-locked");
+      const view = $("#view");
+      if (view) view.innerHTML = `<div class="empty"><div class="big">${icon("lock")}</div><h4>Sign in required</h4><p>Sign in with an active staff account to continue.</p></div>`;
+    } else {
+      document.body.classList.remove("auth-locked");
+      if ($("#view")?.querySelector("h4")?.textContent === "Sign in required") navigate();
+    }
+  });
   window.addEventListener("pos:synced", () => reloadLocal());
   window.addEventListener("pwa:status", renderInstall);
   $("#syncPill").addEventListener("click", onPillClick);

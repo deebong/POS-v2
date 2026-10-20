@@ -5,6 +5,7 @@ import { getConfig } from "./data/backend.js";
 import { openProductForm, openStockModal } from "./inventory.js";
 import { openInvoiceById } from "./sales.js";
 import { state } from "./store.js";
+import { can, currentStaff } from "./staff.js";
 import { $, $$, esc, hydrateIcons, icon, methodBadge, methodLabel, money, num, fmtTime } from "./ui.js";
 
 function delta(cur, prev) {
@@ -94,13 +95,15 @@ export async function mount(el) {
   }
   const weekDelta = delta(d.week.revenue, d.week.prevRevenue);
   const maxTop = Math.max(...d.topProducts.map((t) => t.revenue), 1);
+  const activeStaff = currentStaff();
+  const staffName = activeStaff?.name || activeStaff?.username || "there";
 
   el.innerHTML = `
   <div class="view-enter">
     <div class="page-head">
-      <div><h2>${greeting()}, Alex 👋</h2><p>Here's how ${esc(state.settings.storeName)} is doing today.</p></div>
+      <div><h2>${greeting()}, ${esc(staffName)} 👋</h2><p>Here's how ${esc(state.settings.storeName)} is doing today.</p></div>
       <div class="actions">
-        <button class="btn btn-outline" id="dAdd">${icon("plus")} Add product</button>
+        ${can("inventory") ? `<button class="btn btn-outline" id="dAdd">${icon("plus")} Add product</button>` : ""}
         <a class="btn btn-primary" href="#/pos">${icon("cart")} New sale</a>
       </div>
     </div>
@@ -184,7 +187,7 @@ export async function mount(el) {
 
   const hide = $("#hideTip", el);
   if (hide) hide.onclick = () => { localStorage.setItem("pos.hideLocalTip", "1"); $("#localTip", el).remove(); };
-  $("#dAdd", el).onclick = () => openProductForm(null, { onSaved: () => mount(el) });
+  $("#dAdd", el)?.addEventListener("click", () => { if (can("inventory")) openProductForm(null, { onSaved: () => mount(el) }); });
   $$("[data-restock]", el).forEach((b) =>
     b.addEventListener("click", async () => {
       const pid = Number(b.closest("[data-pid]").dataset.pid);

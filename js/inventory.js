@@ -38,6 +38,7 @@ export function openProductForm(product, { onSaved } = {}) {
     body: `
     <form id="pf" class="form-grid" autocomplete="off">
       <div class="field span-2"><label>Product name *</label><input class="input" name="name" required maxlength="120" value="${esc(p.name)}" placeholder="e.g. Organic Bananas" /></div>
+      <div class="field span-2"><label>Tamil name <span class="muted">(optional)</span></label><input class="input" name="nameTa" maxlength="120" value="${esc(p.nameTa || "")}" placeholder="எ.கா. வாழைப்பழம்" /></div>
       <div class="field"><label>Category</label><input class="input" name="category" list="catList" value="${esc(p.category)}" placeholder="e.g. Fruits & Veg" />
         <datalist id="catList">${cats.map((c) => `<option value="${esc(c)}">`).join("")}</datalist></div>
       <div class="field"><label>Sold by (unit)</label><select class="select" name="unit">${UNITS.map((u) => `<option ${u === p.unit ? "selected" : ""}>${u}</option>`).join("")}</select>
@@ -151,6 +152,7 @@ export function openProductForm(product, { onSaved } = {}) {
       imageUrl: form.imageUrl.value,
       id: editing ? p.id : undefined,
       name: form.name.value,
+      nameTa: form.nameTa.value,
       category: form.category.value,
       unit: form.unit.value,
       sku: form.sku.value,
@@ -198,7 +200,7 @@ export function openStockModal(p, { onSaved } = {}) {
 
   modal.body.innerHTML = `
     <div class="cell-product" style="margin-bottom:16px"><span class="thumb" style="background:${catTint(p.category)}">${mediaHtml(p)}</span>
-      <div><div class="name">${esc(p.name)}</div><div class="meta">${esc(p.sku)} · currently <b>${num(p.stock)} ${esc(p.unit)}</b></div></div></div>
+      <div><div class="name">${esc(p.name)}${p.nameTa ? `<small class="secondary-name" lang="ta">${esc(p.nameTa)}</small>` : ""}</div><div class="meta">${esc(p.sku)} · currently <b>${num(p.stock)} ${esc(p.unit)}</b></div></div></div>
     <div class="segmented full" id="stMode" style="margin-bottom:16px">
       <button data-m="add" class="active">Add stock</button><button data-m="remove">Remove</button><button data-m="set">Set to</button></div>
     <div class="field"><label id="stLabel">Quantity to add (${esc(p.unit)})</label><input class="input" id="stQty" type="number" min="0" step="${step}" placeholder="0" style="font-size:18px;font-weight:700;height:50px" /></div>
@@ -366,6 +368,7 @@ function csvToProducts(text) {
     sku: get(r, "sku"),
     barcode: get(r, "barcode"),
     name: get(r, "name", "product"),
+    nameTa: get(r, "tamilname", "nameta", "nametamil"),
     category: get(r, "category"),
     unit: get(r, "unit"),
     price: get(r, "price", "sellingprice"),

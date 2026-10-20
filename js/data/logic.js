@@ -4,8 +4,8 @@
 export const DEFAULT_SETTINGS = {
   storeName: "FreshMart Grocery",
   address: "12, MG Road, Bengaluru, Karnataka 560001",
-  phone: "+91 98765 43210",
-  phoneNumbers: JSON.stringify([{ number: "+91 98765 43210", type: "voice", label: "Store" }]),
+  phone: "",
+  phoneNumbers: JSON.stringify([]),
   language: "en",
   logoUrl: "",
   brandLogoMode: "default", // default | custom
@@ -114,6 +114,7 @@ export function parseProduct(b) {
       sku,
       barcode: str(b.barcode, 40) || null,
       name,
+      nameTa: str(b.nameTa),
       category: str(b.category, 60) || "General",
       emoji: str(b.emoji, 8) || "🛒",
       unit: str(b.unit, 12).toLowerCase() || "pc",

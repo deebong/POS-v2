@@ -34,8 +34,12 @@ export function languageInfo(id) {
   return LANGUAGE_OPTIONS.find((x) => x.id === id) || LANGUAGE_OPTIONS[0];
 }
 export function t(key, locale = "en") {
-  const base = locale === "ta-en" ? "en" : locale;
-  return DICTIONARY[base]?.[key] || DICTIONARY.en[key] || key;
+  if (locale === "ta-en") {
+    const tamil = DICTIONARY.ta[key];
+    const english = DICTIONARY.en[key] || key;
+    return tamil ? `${tamil} (${english})` : english;
+  }
+  return DICTIONARY[locale]?.[key] || DICTIONARY.en[key] || key;
 }
 export function supportedLanguages() {
   return LANGUAGE_OPTIONS.map((x) => ({ ...x }));
@@ -75,11 +79,11 @@ function installLanguageObserver() {
   languageObserver.observe(document.body, { childList: true, subtree: true });
 }
 export function applyLanguage(root = document, locale = "en") {
-  const lang = locale === "ta" || locale === "hi" ? locale : "en";
+  const lang = ["ta", "ta-en", "hi"].includes(locale) ? locale : "en";
   activeLocale = lang;
   installLanguageObserver();
-  const dict = TEXT[lang] || {};
-  document.documentElement.lang = lang === "ta" ? "ta-IN" : lang === "hi" ? "hi-IN" : "en";
+  const dict = lang === "ta-en" ? TEXT.ta : (TEXT[lang] || {});
+  document.documentElement.lang = lang === "ta" || lang === "ta-en" ? "ta-IN" : lang === "hi" ? "hi-IN" : "en";
   const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const nodes = [];
   while (walk.nextNode()) nodes.push(walk.currentNode);
@@ -90,7 +94,8 @@ export function applyLanguage(root = document, locale = "en") {
     const trimmed = source.trim();
     if (!trimmed) continue;
     const translated = dict[trimmed] || trimmed;
-    node.nodeValue = source.replace(trimmed, translated);
+    const displayed = lang === "ta-en" && translated !== trimmed ? `${translated} (${trimmed})` : translated;
+    node.nodeValue = source.replace(trimmed, displayed);
   }
   root.querySelectorAll?.("input[placeholder],textarea[placeholder],button[title],a[title],[aria-label]").forEach(el => {
     for (const attr of ["placeholder","title","aria-label"]) {
@@ -98,7 +103,10 @@ export function applyLanguage(root = document, locale = "en") {
       const current = el.getAttribute(attr);
       if (el.getAttribute(key) === null && current !== null) el.setAttribute(key, current);
       const source = el.getAttribute(key);
-      if (source !== null) el.setAttribute(attr, dict[source] || source);
+      if (source !== null) {
+        const translated = dict[source] || source;
+        el.setAttribute(attr, lang === "ta-en" && translated !== source ? `${translated} (${source})` : translated);
+      }
     }
   });
 }

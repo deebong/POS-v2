@@ -96,6 +96,19 @@ function css() {
   </style>`;
 }
 
+async function readInstallationStatusWithRetry() {
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await backend.installationStatus();
+    } catch (error) {
+      lastError = error;
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 350 * (attempt + 1)));
+    }
+  }
+  throw lastError || new Error("Unable to check installation status.");
+}
+
 export async function checkInstallation() {
   const cfg = getConfig();
   const marker = getMarker();
@@ -106,7 +119,7 @@ export async function checkInstallation() {
     return { installed: false };
   }
   try {
-    const status = await backend.installationStatus();
+    const status = await readInstallationStatusWithRetry();
     if (status?.installed) return { installed: true, marker: setMarker({ installationId: status.installationId, installedAt: status.installedAt, mode: cfg.mode }) };
   } catch (e) {
     return { installed: false, error: e.message || "Unable to check installation status." };
@@ -248,7 +261,7 @@ export async function showInstallationWizard(root = document.getElementById("vie
     }
     try {
       saveConfig({mode:data.mode,url:data.url,key:data.key});
-      existingStatus=await backend.installationStatus();
+      existingStatus=await readInstallationStatusWithRetry();
       existingBackend=!!existingStatus?.installed;
       if(existingBackend){
         if(existingStatus.storeName){ data.storeName=existingStatus.storeName; $("#iStore",root).value=existingStatus.storeName; }
@@ -279,10 +292,15 @@ export async function showInstallationWizard(root = document.getElementById("vie
     data.adminPin=$("#iAdminPin",root)?.value||data.adminPin||""; data.adminPin2=$("#iAdminPin2",root)?.value||data.adminPin2||"";
     data.taxId=$("#iTaxId",root).value.trim(); data.taxLabel=$("#iTaxLabel",root).value.trim()||"GST"; data.upiId=$("#iUpi",root).value.trim();
     data.themeColor=/^#[0-9a-f]{6}$/i.test($("#iColorHex",root).value.trim())?$("#iColorHex",root).value.trim():$("#iColor",root).value;
-    data.brandTagline=$("#iBrandTagline",root)?.value.trim()||data.brandTagline||"Grocery POS";
+    data.brandTagline=$("#iBrandTagline",root)?.value.trim() ?? data.brandTagline ?? "Grocery POS";
     data.productLabelCode=$("#iLabelCode",root).value; data.productImageMode=$("#iImages",root).value; data.receiptFooter=$("#iFooter",root).value.trim();
     data.mode=$("#iMode",root)?.value||data.mode||"hybrid"; data.url=$("#iUrl",root).value.trim(); data.key=$("#iKey",root).value; data.setupCode=$("#iSetupCode",root)?.value.trim()||data.setupCode||"";
   };
+
+  // Re-check after editing the URL/key; detection previously ran only when the
+  // Existing store radio changed, leaving stale negative results after URL entry.
+  $("#iUrl",root).addEventListener("change", () => { if (getInstallKind() === "existing") detectExistingBackend(); });
+  $("#iKey",root).addEventListener("change", () => { if (getInstallKind() === "existing") detectExistingBackend(); });
 
   const validate = () => {
     collect();

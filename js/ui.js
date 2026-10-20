@@ -35,6 +35,7 @@ const P = {
   undo: '<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/>',
   camera: '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/>',
   user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  key: '<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/>',
   box: '<path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/>',
   tag: '<path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82Z"/><path d="M7 7h.01"/>',
   layers: '<path d="m12 2 10 5-10 5L2 7Z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/>',
@@ -254,8 +255,10 @@ export function timeAgo(iso) {
 }
 
 /* ---------- print ---------- */
-export async function printHtml(html) {
+export async function printHtml(html, printTitle = "") {
   const area = $("#printArea");
+  const previousTitle = document.title;
+  if (printTitle) document.title = String(printTitle).replace(/[\\/:*?"<>|]+/g, "-").trim();
   area.innerHTML = html;
   const imgs = $$("img", area);
   await Promise.all(
@@ -265,6 +268,7 @@ export async function printHtml(html) {
   const done = () => {
     document.body.classList.remove("printing");
     area.innerHTML = "";
+    document.title = previousTitle;
     window.removeEventListener("afterprint", done);
   };
   window.addEventListener("afterprint", done);

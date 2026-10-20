@@ -2,6 +2,7 @@
 // Uses the same sale/item records as the normal receipt, with company, customer,
 // taxable-value and tax details. Browser printing can save the invoice as PDF.
 import { esc, money } from "./ui.js";
+import { state } from "./store.js";
 
 const num = (v) => Number.isFinite(Number(v)) ? Number(v) : 0;
 const r2 = (v) => Math.round((num(v) + Number.EPSILON) * 100) / 100;
@@ -19,7 +20,8 @@ export function gstBillHtml(sale, items = [], settings = {}) {
   const lines = items.map((it) => {
     const taxable = r2(num(it.lineSubtotal) * (1 - discountRatio));
     const tax = r2(taxable * num(it.taxRate) / 100);
-    return { ...it, taxable, tax, lineTotal: r2(taxable + tax) };
+    const productNameTa = it.nameTa || state.products.find(p => Number(p.id) === Number(it.productId))?.nameTa || "";
+    return { ...it, nameTa: productNameTa, taxable, tax, lineTotal: r2(taxable + tax) };
   });
   const taxableTotal = r2(lines.reduce((s, x) => s + x.taxable, 0));
   const taxTotal = r2(lines.reduce((s, x) => s + x.tax, 0));
@@ -36,7 +38,7 @@ export function gstBillHtml(sale, items = [], settings = {}) {
 
   const rows = lines.map((it) => `
     <tr>
-      <td><b>${esc(it.name || "")}</b><div class="muted">${esc(it.sku || "—")}</div></td>
+      <td><b>${esc(it.name || "")}</b>${it.nameTa ? `<div class="muted" lang="ta">${esc(it.nameTa)}</div>` : ""}<div class="muted">${esc(it.sku || "—")}</div></td>
       <td class="r">${esc(String(it.qty ?? ""))} ${esc(it.unit || "")}</td>
       <td class="r">${currencyMarkup}${num(it.price).toFixed(2)}</td>
       <td class="r">${currencyMarkup}${it.taxable.toFixed(2)}</td>
@@ -45,18 +47,23 @@ export function gstBillHtml(sale, items = [], settings = {}) {
       <td class="r"><b>${currencyMarkup}${it.lineTotal.toFixed(2)}</b></td>
     </tr>`).join("");
 
+  const theme = ["classic", "modern", "minimal", "emerald"].includes(settings.gstInvoiceTheme) ? settings.gstInvoiceTheme : "classic";
   return `<!doctype html>
 <html><head><meta charset="utf-8"><meta http-equiv="Content-Type" content="text/html; charset=utf-8"><title>GST Bill ${esc(sale.invoiceNo)}</title>
 <style>
 *{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#fff;color:#111827;font-size:12px}
 .invoice{max-width:900px;margin:0 auto;padding:28px}.top{display:flex;justify-content:space-between;gap:24px;border-bottom:2px solid #111827;padding-bottom:16px}
+body.theme-modern .top{border-bottom:4px solid #2563eb}.theme-modern .box{border-radius:2px;border-color:#bfdbfe}.theme-modern th{background:#dbeafe}
+body.theme-minimal .top{border-bottom:1px solid #9ca3af}.theme-minimal .box{border:0;border-radius:0;border-left:2px solid #d1d5db}.theme-minimal th{background:#fff;border-bottom:2px solid #111827}
+body.theme-emerald .top{border-bottom:4px solid #047857}.theme-emerald .box{border-color:#a7f3d0}.theme-emerald th{background:#d1fae5}
+
 .company h1{font-size:22px;margin:0 0 5px}.company div{margin:2px 0;color:#4b5563}.title{text-align:right}.title h2{margin:0 0 6px;font-size:20px}.title b{font-size:13px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}.box{border:1px solid #d1d5db;border-radius:8px;padding:12px}.box h3{font-size:11px;text-transform:uppercase;letter-spacing:.08em;margin:0 0 7px;color:#6b7280}.box p{margin:3px 0}
 table{width:100%;border-collapse:collapse;margin-top:14px}th{background:#f3f4f6;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.04em}th,td{border:1px solid #d1d5db;padding:8px}td.r,th.r{text-align:right}.muted{font-size:10px;color:#6b7280;margin-top:2px}
 .summary{margin-left:auto;width:330px;margin-top:14px}.sum{display:flex;justify-content:space-between;padding:5px 0}.grand{border-top:2px solid #111827;font-size:16px;font-weight:800;padding-top:9px}
 .taxbox{margin-top:16px;border:1px solid #d1d5db;padding:10px}.footer{margin-top:24px;border-top:1px solid #d1d5db;padding-top:12px;color:#6b7280}
 @media print{body{font-size:11px}.invoice{max-width:none;padding:8mm}.no-print{display:none!important}@page{size:A4;margin:8mm}}
-</style></head><body><main class="invoice">
+</style></head><body class="theme-${theme}"><main class="invoice">
 <section class="top"><div class="company"><h1>${esc(company)}</h1>
 ${settings.address ? `<div>${esc(settings.address)}</div>` : ""}
 ${phone ? `<div>Phone: ${esc(phone)}</div>` : ""}

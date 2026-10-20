@@ -144,27 +144,28 @@ function sessionValid(s) {
 async function load() {
   const saved = await idb.get(KEY).catch(() => null);
   users = (await decryptUsers(saved).catch(() => [])).map(safeUser).filter(u => u.id && u.name && u.username);
+  // Migrate away the legacy hard-coded bootstrap identity only when its known default
+  // PIN verifier also matches. This prevents an old phantom "Anand Ibrahim" account
+  // from surviving upgrades while avoiding deletion of unrelated real staff records.
+  if (users.length === 1) {
+    const legacy = users[0];
+    if (legacy.name === "Anand Ibrahim" && legacy.username === "admin" && legacy.role === "admin" && legacy.mustChangePin) {
+      const legacyPin = await getPinVerifier(legacy, "1234").catch(() => "");
+      if (legacyPin && legacyPin === legacy.pinHash) {
+        users = [];
+        await idb.del(SESSION_KEY).catch(() => {});
+        await idb.del(KEY).catch(() => {});
+      }
+    }
+  }
   const session = await idb.get(SESSION_KEY).catch(() => null);
   currentId = sessionValid(session) && session.deviceId === localDeviceId() && getUser(session.userId)?.active ? session.userId : "";
   if (!currentId && session?.userId) await idb.del(SESSION_KEY).catch(() => {});
-  if (!users.length) {
-    const pin = await makePin("1234");
-    users = [{
-      id: uid(),
-      name: "Anand Ibrahim",
-      username: "admin",
-      phone: "",
-      role: "admin",
-      active: true,
-      createdAt: now(),
-      updatedAt: now(),
-      lastLoginAt: null,
-      ...pin,
-      mustChangePin: true,
-    }];
-    currentId = "";
-    await persist();
-  }
+  // Never invent a privileged account when this browser has no local staff records.
+  // Existing-store imports must authenticate against the Sheet's real staff directory;
+  // a fresh installation creates its first Super Admin through the explicit installer.
+  // In particular, never silently create a hard-coded "Anand Ibrahim" Super Admin.
+  if (!users.length) currentId = "";
 }
 
 export async function initStaff() {
@@ -212,32 +213,88 @@ export async function provisionInitialAdmin({ id = "", name, username, phone = "
 
 async function signIn(user, pin) {
   if (!user?.active) throw new Error("This staff account is inactive.");
+  const lockedUntil = new Date(user.lockedUntil || 0).getTime();
+  if (Number.isFinite(lockedUntil) && lockedUntil > Date.now()) {
+    const minutes = Math.max(1, Math.ceil((lockedUntil - Date.now()) / 60000));
+    throw new Error(`Too many incorrect PIN attempts on this PC. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`);
+  }
+  if (user.lockedUntil) { user.lockedUntil = null; user.failedAttempts = 0; await persist(); }
   const localHash = await getPinVerifier(user, pin);
-  if (!localHash || localHash !== user.pinHash) throw new Error("Incorrect PIN.");
+  if (!localHash || localHash !== user.pinHash) {
+    user.failedAttempts = (Number(user.failedAttempts) || 0) + 1;
+    if (user.failedAttempts >= PIN_MAX_FAILED) {
+      user.failedAttempts = 0;
+      user.lockedUntil = new Date(Date.now() + PIN_LOCK_MS).toISOString();
+      await persist();
+      throw new Error("Too many incorrect PIN attempts on this PC. Try again in 15 minutes.");
+    }
+    const remaining = PIN_MAX_FAILED - user.failedAttempts;
+    await persist();
+    throw new Error(`Incorrect PIN. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining.`);
+  }
+  user.failedAttempts = 0;
+  user.lockedUntil = null;
   const cfg = (() => { try { return JSON.parse(localStorage.getItem("pos.backend.v1") || "{}"); } catch { return {}; } })();
 
-  // Local credential validation is authoritative for this offline-first counter. Establish
-  // the local session first; Apps Script authentication must never make the sign-in modal
-  // wait on network/cold-start latency.
+  // Establish the local-first session immediately. When cloud mode is configured,
+  // use the PIN entered in this interactive sign-in to authenticate against the
+  // server's own salt/verifier. Reusing the local PIN hash silently fails whenever
+  // the local and server salts differ, leaving every protected action unauthenticated.
   currentId = user.id;
   user.lastLoginAt = now();
   user.updatedAt = now();
   await persist();
   await persistSession();
 
+  let cloudAuthError = "";
   if (navigator.onLine && cfg.mode && cfg.mode !== "local" && cfg.url) {
-    // Server authentication is deliberately background-only. A transient Apps Script
-    // delay must never turn a successful local sign-in into an "offline" sign-in state.
-    ensureOnlineStaffAuth().then(() => {
+    try {
+      clearServerAuthCooldown();
+      const { onlineLogin, clearAuthToken } = await import("./auth.js");
+      const serverUser = await onlineLogin(user.username, pin);
+      if (serverUser.id !== user.id) {
+        clearAuthToken();
+        throw new Error("The Google Sheets staff account does not match this device's staff record. Use the one-time setup-code repair to reconcile staff accounts.");
+      }
+      // The server is authoritative for roles. Refresh the local role before route
+      // authorization so a stale/promoted local record cannot retain extra access.
+      const serverRole = normalizeRole(serverUser.role);
+      if (user.role !== serverRole) {
+        user.role = serverRole;
+        await persist();
+      }
+      sessionStorage.removeItem("freshmart.auth.offline");
       window.dispatchEvent(new CustomEvent("staff:server-auth", { detail: { ok: true } }));
       window.dispatchEvent(new CustomEvent("sync:status"));
-    }).catch(() => {
-      // Do not surface transport/authentication failures during sign-in. Protected
-      // operations will retry server authentication when they actually need it.
-    });
+    } catch (error) {
+      cloudAuthError = String(error?.message || error || "Google Sheets authentication failed.");
+      window.dispatchEvent(new CustomEvent("staff:server-auth", { detail: { ok: false, message: cloudAuthError } }));
+      window.dispatchEvent(new CustomEvent("sync:status"));
+    }
   }
 
-  toast(`Signed in as ${user.name}`);
+  if (cloudAuthError) {
+    // A definitive server rejection means the local directory is stale (for example,
+    // the Super Admin was deleted or disabled in the Sheet). Do not leave a local
+    // session alive after the server has rejected this identity.
+    const definitiveRejection = /Invalid username or PIN|staff account does not match|identity does not match|credential.*out of sync|temporarily locked|account is inactive/i.test(cloudAuthError);
+    if (definitiveRejection) {
+      const { clearAuthToken } = await import("./auth.js");
+      clearAuthToken();
+      currentId = "";
+      await idb.del(SESSION_KEY).catch(() => {});
+      sessionStorage.removeItem("freshmart.auth.offline");
+      window.dispatchEvent(new CustomEvent("staff:changed"));
+      window.dispatchEvent(new CustomEvent("sync:status"));
+      if (/Invalid username or PIN|staff account does not match|identity does not match|credential.*out of sync/i.test(cloudAuthError)) {
+        throw new Error("Google Sheets staff credentials are out of sync. This account has been signed out on this PC. Use the one-time setup-code repair below.");
+      }
+      throw new Error(cloudAuthError);
+    }
+    toast("Signed in on this PC, but Google Sheets sign-in failed: " + cloudAuthError, "warn");
+  } else {
+    toast(`Signed in as ${user.name}`);
+  }
   return user;
 }
 
@@ -267,7 +324,7 @@ async function askPin(user, title = "Switch operator") {
       const pin = input.value.trim();
       if (!pin) { err.textContent = "Enter the staff PIN."; return; }
       go.disabled = true; err.textContent = "";
-      try { await signIn(user, pin); m.close(); resolve(true); }
+      try { await signIn(user, pin); m.close(); window.dispatchEvent(new CustomEvent("staff:switched")); resolve(true); }
       catch (e) { err.textContent = e.message; go.disabled = false; input.select(); }
     };
     input.addEventListener("keydown", e => { if (e.key === "Enter") submit(); });
@@ -312,8 +369,10 @@ async function authenticateServer(user = currentStaff()) {
   if (!user || !navigator.onLine || cfg.mode === "local" || !cfg.url) return false;
   const cooldown = serverAuthCooldown(user);
   if (cooldown > Date.now()) return false;
-  const { getAuthToken } = await import("./auth.js");
-  if (getAuthToken()) return true;
+  const { getAuthToken, clearAuthToken } = await import("./auth.js");
+  // A token can survive a tab close after its server session expires or is revoked.
+  // Replace it with a fresh session rather than trusting local token presence.
+  if (getAuthToken()) clearAuthToken();
   if (onlineAuthPromise) return onlineAuthPromise;
   onlineAuthPromise = (async () => {
     const localHash = user.pinHash || "";
@@ -350,20 +409,21 @@ async function authenticateServer(user = currentStaff()) {
 export async function ensureOnlineStaffAuth() {
   return authenticateServer(currentStaff());
 }
-export async function refreshStaffSession() { await initStaff(); const s = await idb.get(SESSION_KEY).catch(() => null); if (!sessionValid(s)) { currentId = ""; await idb.del(SESSION_KEY).catch(() => {}); return null; } await touchSession(); return currentStaff(); }
+export async function refreshStaffSession() { await initStaff(); const s = await idb.get(SESSION_KEY).catch(() => null); if (!sessionValid(s)) { currentId = ""; await idb.del(SESSION_KEY).catch(() => {}); window.dispatchEvent(new CustomEvent("staff:changed")); return null; } await touchSession(); return currentStaff(); }
 export async function logoutStaff() {
   const hadOnlineAuth = navigator.onLine && getConfig().mode !== "local";
-  if (hadOnlineAuth) {
-    try {
-      const { onlineLogout } = await import("./auth.js");
-      await onlineLogout();
-    } catch (e) {
-      toast("Signed out on this counter. Server session could not be closed: " + (e.message || e), "warn");
-    }
-  }
+  // End local access first. Server revocation runs in the background so a slow Apps
+  // Script response cannot keep the operator signed in or hold the logout UI open.
   currentId = "";
   await idb.del(SESSION_KEY).catch(() => {});
   window.dispatchEvent(new CustomEvent("staff:changed"));
+  if (hadOnlineAuth) {
+    import("./auth.js").then(({ onlineLogout }) => onlineLogout()).catch((e) => {
+      toast("Signed out on this counter. Server revocation could not be confirmed: " + (e.message || e), "warn");
+    });
+  } else {
+    import("./auth.js").then(({ clearAuthToken }) => clearAuthToken()).catch(() => {});
+  }
   return true;
 }
 
@@ -452,14 +512,20 @@ export async function loginStaff(force = false) {
           const { onlineLogin } = await import("./auth.js");
           const serverUser = await onlineLogin(username, pin);
           const signed = await adoptServerStaff(serverUser, pin);
-          completed = true; m.close(); resolve(signed); return;
+          completed = true;
+          document.body.classList.remove("auth-locked");
+          window.dispatchEvent(new CustomEvent("staff:changed"));
+          m.close(); resolve(signed); return;
         }
         if (!user) throw new Error("Invalid username or PIN.");
         const signed = await signIn(user, pin);
-        completed = true; m.close(); resolve(signed);
+        completed = true;
+        document.body.classList.remove("auth-locked");
+        window.dispatchEvent(new CustomEvent("staff:changed"));
+        m.close(); resolve(signed);
       } catch (e) {
         const message = e.message || "Sign-in failed.";
-        if (user && /^(Invalid username or PIN\.?|This account is temporarily locked\b)/.test(message) && getConfig().mode !== "local") {
+        if (user && (/^(Invalid username or PIN\.?|This account is temporarily locked\b)/.test(message) || /Google Sheets staff credentials are out of sync/i.test(message)) && getConfig().mode !== "local") {
           // Do not attempt an unauthenticated server staff sync here. authSyncStaff
           // is intentionally protected and would create a circular recovery path.
           // Instead, expose the explicit one-time setup-code recovery.
@@ -483,7 +549,10 @@ export async function loginStaff(force = false) {
         if (!repairTarget || !pin) throw new Error("Enter the same username and PIN, then run the repair.");
         await repairServerBootstrap(code);
         const signed = await signIn(repairTarget, pin);
-        completed = true; m.close(); resolve(signed);
+        completed = true;
+        document.body.classList.remove("auth-locked");
+        window.dispatchEvent(new CustomEvent("staff:changed"));
+        m.close(); resolve(signed);
       } catch (e) {
         m.$("#loginError").textContent = e.message || "Server repair failed.";
         b.disabled = false;
@@ -491,6 +560,11 @@ export async function loginStaff(force = false) {
     };
     m.$("#loginGo").onclick = submit;
     m.$("#loginPin").addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
+    m.$("#loginUsername").addEventListener("blur", () => {
+      const username = m.$("#loginUsername").value.trim().toLowerCase();
+      if (!username || !navigator.onLine || getConfig().mode === "local" || !getConfig().url) return;
+      import("./auth.js").then(({ prefetchAuthChallenge }) => prefetchAuthChallenge(username)).catch(() => {});
+    });
     m.$("#loginUsername").addEventListener("keydown", (e) => { if (e.key === "Enter") m.$("#loginPin").focus(); });
     setTimeout(() => m.$("#loginUsername").focus(), 40);
   });
@@ -624,7 +698,7 @@ async function openEditor(existing=null) {
     title: editing ? "Edit staff member" : "Add staff member",
     sub: editing ? `Update ${existing.name}'s role and account details.` : "Create an operator account for this POS.",
     size: "md",
-    body: `<div class="form-grid"><div class="field"><label>Full name</label><input class="input" id="sfName" maxlength="80" value="${esc(existing?.name||"")}"></div><div class="field"><label>Username</label><input class="input" id="sfUser" maxlength="60" value="${esc(existing?.username||"")}" ${editing?"readonly":""}></div><div class="field"><label>Role</label><select class="input" id="sfRole">${Object.entries(ROLES).map(([k,r])=>`<option value="${k}" ${(existing?.role||"cashier")===k?"selected":""}>${r.label}</option>`).join("")}</select><span class="hint" id="sfRoleHint"></span></div><div class="field"><label>Phone <span class="muted">(optional)</span></label><input class="input" id="sfPhone" maxlength="30" value="${esc(existing?.phone||"")}"></div>${editing?"":`<div class="field span-2"><label>Initial PIN</label><input class="input" id="sfPin" type="password" inputmode="numeric" maxlength="12" placeholder="4–12 digits"><span class="hint">The PIN is immediately converted to a salted PBKDF2 hash.</span></div>`}</div>`,
+    body: `<div class="form-grid"><div class="field"><label>Full name</label><input class="input" id="sfName" maxlength="80" value="${esc(existing?.name||"")}"></div><div class="field"><label>Username</label><input class="input" id="sfUser" maxlength="60" value="${esc(existing?.username||"")}" ${editing?"readonly":""}></div><div class="field"><label>Role</label><select class="input" id="sfRole">${Object.entries(ROLES).map(([k,r])=>`<option value="${k}" ${(existing?.role||"cashier")===k?"selected":""}>${r.label}</option>`).join("")}</select><span class="hint" id="sfRoleHint"></span></div><div class="field"><label>Phone <span class="muted">(optional)</span></label><input class="input" id="sfPhone" maxlength="30" value="${esc(existing?.phone||"")}"></div>${editing?`<div class="field span-2"><label>New PIN <span class="muted">(optional)</span></label><input class="input" id="sfPin" type="password" inputmode="numeric" maxlength="12" placeholder="Leave blank to keep current PIN"><span class="hint">Leave blank to keep the current PIN. A new PIN will require the staff member to change it after sign-in.</span></div>`:`<div class="field span-2"><label>Initial PIN</label><input class="input" id="sfPin" type="password" inputmode="numeric" maxlength="12" placeholder="4–12 digits"><span class="hint">The PIN is immediately converted to a salted PBKDF2 hash.</span></div>`}</div>`,
     footer: `<button class="btn btn-outline" data-close>Cancel</button><button class="btn btn-primary" id="sfSave">${icon("check")} ${editing?"Save changes":"Create staff"}</button>`,
   });
   const roleHint=()=>{m.$("#sfRoleHint").textContent=ROLES[m.$("#sfRole").value].description;}; roleHint(); m.$("#sfRole").onchange=roleHint;
@@ -636,11 +710,19 @@ async function openEditor(existing=null) {
     const btn=m.$("#sfSave");btn.disabled=true;
     try{
       if(editing){
-        Object.assign(existing,{name,role,phone,updatedAt:now()});
+        const newPin=m.$("#sfPin").value.trim();
+        if(newPin && !/^\d{4,12}$/.test(newPin)){btn.disabled=false;return toast("Use a numeric PIN with 4–12 digits.","error");}
+        const hashes=newPin ? await makePin(newPin) : {};
+        Object.assign(existing,{name,role,phone,updatedAt:now(),...hashes,...(newPin?{mustChangePin:true,failedAttempts:0,lockedUntil:null,lastOnlineAuthAt:null}:{})});
         await persist();
+        const cfg=getConfig(); let serverSynced=false;
+        if(navigator.onLine && cfg.mode && cfg.mode!=="local" && cfg.url){
+          try { await syncServerStaff(); serverSynced=true; localStorage.removeItem(SERVER_SYNC_KEY); }
+          catch(syncError) { localStorage.setItem(SERVER_SYNC_KEY,new Date().toISOString()); scheduleServerStaffSync(); }
+        }
         m.close(); render();
-        toast("Staff account updated");
-        scheduleServerStaffSync();
+        if(serverSynced) toast(newPin?"Staff account and new PIN synchronized with Google Sheets":"Staff account updated and synchronized with Google Sheets");
+        else toast("Staff changes are saved on this PC, but Google Sheets has not confirmed them. Sync staff before relying on these changes on other counters.","warn");
       } else {
         const pin=m.$("#sfPin").value.trim();
         if(!/^\d{4,12}$/.test(pin)){btn.disabled=false;return toast("Use a numeric PIN with 4–12 digits.","error");}
@@ -648,15 +730,23 @@ async function openEditor(existing=null) {
         users.push({id:uid(),name,username,role,phone,active:true,createdAt:now(),updatedAt:now(),lastLoginAt:null,...hashes,mustChangePin:true});
         await persist();
         const cfg = (() => { try { return JSON.parse(localStorage.getItem("pos.backend.v1") || "{}"); } catch { return {}; } })();
+        let serverSynced = false;
         if (navigator.onLine && cfg.mode && cfg.mode !== "local" && cfg.url) {
           try {
             await syncServerStaff();
+            serverSynced = true;
+            localStorage.removeItem(SERVER_SYNC_KEY);
           } catch (syncError) {
-            toast("Staff account saved locally, but Google Sheets sync failed: " + (syncError.message || syncError), "warn");
+            // Keep the local account, but persist a retry marker and never imply that
+            // Google Sheets has the account until the server confirms the directory sync.
+            localStorage.setItem(SERVER_SYNC_KEY, new Date().toISOString());
+            scheduleServerStaffSync();
+            toast("Staff account saved on this PC only; Google Sheets did not confirm the update: " + (syncError.message || syncError), "warn");
           }
         }
         m.close(); render();
-        toast("Staff account created");
+        if (serverSynced) toast("Staff account created and synchronized with Google Sheets");
+        else if (!navigator.onLine || !cfg.url || cfg.mode === "local") toast("Staff account created on this PC only. Connect Google Sheets to sync it.", "warn");
       }
     }catch(e){btn.disabled=false;toast(e.message||"Could not save staff account.","error");}
   };
@@ -665,7 +755,24 @@ async function openEditor(existing=null) {
 async function resetPin(user) {
   if(!can("staff") || !user) return toast("Only Admin users can reset staff PINs.","error");
   const m=openModal({title:"Reset staff PIN",sub:user.name, size:"sm",body:`<div class="field"><label>New PIN</label><input class="input" id="newStaffPin" type="password" inputmode="numeric" maxlength="12" placeholder="4–12 digits"></div>`,footer:`<button class="btn btn-outline" data-close>Cancel</button><button class="btn btn-primary" id="pinSave">${icon("check")} Reset PIN</button>`});
-  m.$("#pinSave").onclick=async()=>{const pin=m.$("#newStaffPin").value.trim();if(!/^\d{4,12}$/.test(pin))return toast("Use a numeric PIN with 4–12 digits.","error");const hashes=await makePin(pin);Object.assign(user,hashes,{mustChangePin:true,failedAttempts:0,lockedUntil:null,lastOnlineAuthAt:null,updatedAt:now()});await persist();scheduleServerStaffSync();m.close();toast(`PIN reset for ${user.name}`);};
+  m.$("#pinSave").onclick=async()=>{
+    const b=m.$("#pinSave"), pin=m.$("#newStaffPin").value.trim();
+    if(!/^\d{4,12}$/.test(pin))return toast("Use a numeric PIN with 4–12 digits.","error");
+    b.disabled=true;
+    try {
+      const hashes=await makePin(pin);
+      Object.assign(user,hashes,{mustChangePin:true,failedAttempts:0,lockedUntil:null,lastOnlineAuthAt:null,updatedAt:now()});
+      await persist();
+      const cfg=getConfig(); let serverSynced=false;
+      if(navigator.onLine && cfg.mode && cfg.mode!=="local" && cfg.url){
+        try { await syncServerStaff(); serverSynced=true; localStorage.removeItem(SERVER_SYNC_KEY); }
+        catch(syncError) { localStorage.setItem(SERVER_SYNC_KEY,new Date().toISOString()); scheduleServerStaffSync(); }
+      }
+      m.close(); render();
+      if(serverSynced) toast(`PIN reset for ${user.name} and synchronized with Google Sheets`);
+      else toast(`PIN reset on this PC for ${user.name}; Google Sheets has not confirmed the change. Reconnect or sync staff before using this PIN on other counters.`,"warn");
+    } catch(e) { b.disabled=false; toast(e.message||"Could not reset staff PIN.","error"); }
+  };
 }
 
 async function toggleUser(user) {

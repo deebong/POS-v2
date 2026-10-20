@@ -94,9 +94,12 @@ export function saveProduct(db, { product }) {
   const id = Number(product.id) || 0;
   const now = new Date().toISOString();
   if (id) {
-    const cur = db.products.find((p) => p.id === id);
-    if (!cur) throw new Error("Product not found");
-    assertUnique(db, data, id);
+    // Numeric IDs can differ between an offline snapshot and the cloud sheet after
+    // imports or schema migrations. Fall back to the stable SKU before failing an edit.
+    const cur = db.products.find((p) => p.id === id) ||
+      (data.sku ? db.products.find((p) => same(p.sku, data.sku)) : null);
+    if (!cur) throw new Error("Product not found. Refresh Inventory and try again; the product ID and SKU could not be matched.");
+    assertUnique(db, data, cur.id);
     const { stock, ...fields } = data; // eslint-disable-line no-unused-vars
     Object.assign(cur, fields, { updatedAt: now }); // stock only changes via adjustStock
     return { product: cur };

@@ -7,9 +7,9 @@ const quote = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
 /** CSV with a BOM so Excel shows ₹ and other symbols correctly. */
 export const toCsv = (rows) => "\uFEFF" + rows.map((r) => r.map(quote).join(",")).join("\r\n");
 
-export const PRODUCT_CSV_HEAD = ["SKU", "Barcode", "Name", "Category", "Unit", "Price", "Cost", "Tax %", "Stock", "Reorder level", "Active", "Emoji", "Image URL"];
+export const PRODUCT_CSV_HEAD = ["SKU", "Barcode", "Name", "Tamil name", "Category", "Unit", "Price", "Cost", "Tax %", "Stock", "Reorder level", "Active", "Emoji", "Image URL"];
 export const productCsvRow = (p) => [
-  p.sku, p.barcode, p.name, p.category, p.unit, p.price, p.cost, p.taxRate, p.stock, p.reorderLevel, p.isActive ? "yes" : "no", p.emoji, p.imageUrl || "",
+  p.sku, p.barcode, p.name, p.nameTa || "", p.category, p.unit, p.price, p.cost, p.taxRate, p.stock, p.reorderLevel, p.isActive ? "yes" : "no", p.emoji, p.imageUrl || "",
 ];
 
 const group = (items) => {

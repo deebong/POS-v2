@@ -6,13 +6,13 @@
 /* Keep the stock line inside every POS product card when the catalog has
    enough products to create additional grid rows. */
 .product-grid .pcard {
-  min-height: 196px;
+  min-height: 232px;
   height: auto;
   overflow: hidden;
 }
 
 .product-grid .pcard .pic {
-  flex: 0 0 70px;
+  flex: 0 0 108px; height: 108px;
 }
 
 .product-grid .pcard .nm {

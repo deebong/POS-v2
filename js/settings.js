@@ -1,7 +1,7 @@
 // Settings: data storage & sync mode, offline/PWA, backups, store profile, receipt preview
 import { backend, currentStatus, getConfig, getDevice, saveConfig, setDeviceCode } from "./data/backend.js";
 import {
-  chooseFolder, folderState, folderSupported, forgetFolder, reconnectFolder, writeNow,
+  chooseFolder, folderState, folderSupported, forgetFolder, reconnectFolder, verifyFolderBackup, writeNow,
 } from "./data/folder-backup.js";
 import { peekLocalDb } from "./data/local-adapter.js";
 import { sampleProducts } from "./data/sample.js";
@@ -11,7 +11,7 @@ import { receiptHtml } from "./receipt.js";
 import { importBulk, importProducts, loadAll, reloadLocal, saveSettings, scriptUpToDate, state } from "./store.js";
 import { THEME_PRESETS, applyTheme, normalizeColor } from "./theme.js";
 import { LANGUAGE_OPTIONS } from "./i18n.js";
-import { can, ensureOnlineStaffAuth } from "./staff.js";
+import { can, currentStaff, ensureOnlineStaffAuth } from "./staff.js";
 import { buildExport, demoPayload, invoiceLinesCsv, invoicesCsv, productsCsv, toPortable } from "./transfer.js";
 import {
   $, choiceDialog, confirmDialog, downloadFile, esc, fmtBytes, hydrateIcons, icon, timeAgo, toast,
@@ -135,11 +135,11 @@ export async function mount(el) {
           <div class="sec-head"><span class="stat-icon green">${icon("store", "lg")}</span><div><h3>Store profile</h3><div class="muted">Appears in the receipt header</div></div></div>
           <div class="form-grid">
             <div class="field"><label>Store name</label><input class="input" name="storeName" required value="${esc(state.settings.storeName)}" /></div>
-            <div class="field"><label>Brand tagline / description</label><input class="input" name="brandTagline" value="${esc(state.settings.brandTagline || "Grocery POS")}" placeholder="Grocery POS" /></div>
+            <div class="field"><label>Brand tagline / description</label><input class="input" name="brandTagline" value="${esc(state.settings.brandTagline ?? "")}" placeholder="Grocery POS" /></div>
             <div class="field span-2"><label>Address</label><input class="input" name="address" value="${esc(state.settings.address)}" /></div>
             <div class="field span-2"><label>Phone numbers</label><div id="settingsPhones"></div><button class="btn btn-ghost" type="button" id="addSettingsPhone">+ Add another number</button><span class="hint">Each number can be assigned to Voice calls, WhatsApp, or both.</span></div>
             <div class="field"><label>Language</label><select class="select" name="language" id="settingsLanguage"></select></div>
-            <div class="field"><label>Primary phone</label><input class="input" name="phone" value="${esc(state.settings.phone)}" /></div>
+            <div class="field"><label>Primary phone</label><input class="input" name="phone" value="${esc(state.settings.phone || (() => { try { return JSON.parse(state.settings.phoneNumbers || "[]").find((p) => String(p.number || "").trim())?.number || ""; } catch { return ""; } })())}" /></div>
             <div class="field"><label>Tax / GST / VAT ID</label><input class="input" name="taxId" value="${esc(state.settings.taxId)}" /></div>
             <div class="field"><label>Currency symbol</label><input class="input" name="currency" maxlength="4" value="${esc(state.settings.currency)}" /></div>
             <div class="field"><label>Tax label</label><input class="input" name="taxLabel" maxlength="12" value="${esc(state.settings.taxLabel)}" placeholder="Tax, GST, VAT…" /></div>
@@ -147,6 +147,7 @@ export async function mount(el) {
             <div class="field"><label>Store logo</label><input class="input" type="file" id="settingsLogo" accept="image/png,image/jpeg,image/webp,image/gif"><span class="hint">Upload a custom logo. It will be fitted automatically; the original file is retained in Drive.</span></div>
             <div class="field"><label>UPI QR image</label><input class="input" type="file" id="settingsUpiQr" accept="image/png,image/jpeg,image/webp,image/gif"><span class="hint">Optional custom QR image for payment display.</span></div>
             <div class="field span-2"><label>UPI payment IDs</label><div id="upiSettingsRows"></div><button class="btn btn-ghost" type="button" id="addUpiId">+ Add another UPI ID</button><span class="hint">Add multiple UPI IDs and mark exactly one as Default. The Default ID is used for new UPI QR payments.</span></div>
+            <div class="field"><label>GST invoice template</label><select class="select" name="gstInvoiceTheme"><option value="classic" ${(state.settings.gstInvoiceTheme||"classic")==="classic"?"selected":""}>Classic — professional</option><option value="modern" ${state.settings.gstInvoiceTheme==="modern"?"selected":""}>Modern — blue accent</option><option value="minimal" ${state.settings.gstInvoiceTheme==="minimal"?"selected":""}>Minimal — monochrome</option><option value="emerald" ${state.settings.gstInvoiceTheme==="emerald"?"selected":""}>Emerald — green accent</option></select><span class="hint">Applies to GST bill print and export.</span></div>
             <div class="field span-2"><label>Product label code</label>
               <select class="select" name="productLabelCode">
                 <option value="qr" ${state.settings.productLabelCode === "barcode" ? "" : "selected"}>QR code — use the product SKU</option>
@@ -245,7 +246,8 @@ export async function mount(el) {
     </details>`;
 
   function scriptNotice() {
-    if (cfg.mode === "local" || selected !== cfg.mode || scriptUpToDate()) return "";
+    // An empty version means bootstrap has not confirmed the deployed script version yet.
+    if (cfg.mode === "local" || selected !== cfg.mode || !state.meta.scriptVersion || scriptUpToDate()) return "";
     return `<div class="sync-error" style="margin-top:14px;align-items:flex-start">${icon("alert", "sm")}<div>Your Google Apps Script is ${state.meta.scriptVersion ? "version " + esc(state.meta.scriptVersion) : "an older version"}.
       Paste the latest <b>Code.gs</b> into Apps Script and choose <b>Deploy ▸ Manage deployments ▸ Edit ▸ New version</b> to enable demo data, bulk import, product photos on Google Drive and syncing of store colours.
       <div class="btn-row" style="margin-top:8px"><button class="btn btn-sm btn-outline" data-act="copyCode">Copy Code.gs</button></div></div></div>`;
@@ -439,7 +441,7 @@ export async function mount(el) {
     const msg =
       mode === "local"
         ? "All data on this PC will be replaced by the backup. This can't be undone."
-        : "Changes in the backup that the sheet doesn't have yet will be queued and synced. Nothing is overwritten.";
+        : "This merges missing records into the cloud data. Existing products and invoices are not overwritten or deleted, so this does not roll back renamed products. For a full cloud rollback, use Admin restore from a Google Drive backup.";
     if (!(await confirmDialog({ title: `Restore “${file.name}”?`, message: msg, confirmText: "Restore", danger: mode === "local" }))) return;
     try {
       const r = await backend.importData(data);
@@ -555,6 +557,24 @@ export async function mount(el) {
         throw new Error("Your Apps Script is an older version. Paste the latest Code.gs into Apps Script and deploy a New version, then try again.");
       }
       saveConfig({ mode, url, key });
+      if (mode === "hybrid") {
+        // Hybrid bootstrap is server-authorized. Authenticate the already PIN-verified
+        // local operator before loadAll() requests protected cloud data or opens the
+        // empty-sheet import choice. Reuse the local PIN verifier; never invent an admin.
+        const { getAuthToken, onlineLogin } = await import("./auth.js");
+        if (!getAuthToken()) {
+          const { currentStaff } = await import("./staff.js");
+          const user = currentStaff();
+          if (!user?.pinHash || !user?.pinSalt) {
+            throw new Error("Sign in again with your staff PIN before connecting Google Sheets.");
+          }
+          await onlineLogin(user.username, "", {
+            pinHash: user.pinHash,
+            pinSalt: user.pinSalt,
+            pinIterations: 120000,
+          });
+        }
+      }
       await loadAll();
       if (mode === "hybrid") requestPersist();
       window.dispatchEvent(new CustomEvent("settings:changed"));
@@ -660,18 +680,25 @@ export async function mount(el) {
         if (!navigator.onLine) return toast("Connect to Google Sheets before enabling Drive backups.", "warn");
         busy(btn, true, "Setting up…");
         const r = await backend.backupSetup({ hour: 2 });
-        toast(r.message || "Automatic Google Drive backups enabled", "success");
+        if (!r || r.ok === false || r.configured === false) throw new Error(r?.message || r?.error || "The Apps Script did not confirm that Google Drive backups were enabled.");
+        const verified = await backend.backupStatus();
+        if (!verified || verified.configured !== true) {
+          throw new Error(verified?.lastBackupError || "The setup request returned, but the Apps Script could not verify the Drive folder and scheduled backup triggers. Confirm Drive authorization and deploy the current Code.gs version.");
+        }
+        toast(verified.message || r.message || "Automatic Google Drive backups enabled", "success");
         renderBackup();
       } else if (act === "cloudBackupNow") {
         if (!navigator.onLine) return toast("Cloud backup needs internet.", "warn");
         busy(btn, true, "Backing up…");
         const r = await backend.backupNow({ kind: "manual" });
+        if (!r || r.ok === false) throw new Error(r?.message || r?.error || "The Apps Script did not confirm that the backup was created.");
         toast(r.message || "Google Drive backup created", "success");
         renderBackup();
       } else if (act === "verifyCloudBackup") {
         if (!navigator.onLine) return toast("Cloud verification needs internet.", "warn");
         busy(btn, true, "Verifying…");
         const r = await backend.backupVerify();
+        if (!r) throw new Error("The Apps Script returned no backup verification result.");
         toast(r.message || (r.ok ? "Cloud backup verification passed" : "Cloud backup verification failed"), r.ok ? "success" : "error");
         renderBackup();
       } else if (act === "cloudRestore") {
@@ -680,8 +707,14 @@ export async function mount(el) {
         if (!id) return toast("Paste the Google Drive backup file ID first.", "error");
         if (!confirm("This will replace the live Google Sheets data. A pre-restore backup will be created automatically. Continue?")) return;
         busy(btn, true, "Restoring…");
-        try { const r = await backend.backupRestore({ fileId: id }); toast(r.message || "Restore completed", "success"); await reloadLocal(); }
-        finally { busy(btn, false); renderBackup(); }
+        try {
+          const r = await backend.backupRestore({ fileId: id });
+          if (!r || r.ok === false) throw new Error(r?.message || "The Apps Script returned no restore result. No success was reported.");
+          toast(r.message || "Restore completed", "success");
+          await reloadLocal();
+        } catch (e) {
+          toast(e?.message || "Google Drive restore failed.", "error");
+        } finally { busy(btn, false); renderBackup(); }
       } else if (act === "forgetFolder") {
         await forgetFolder();
         toast("Folder backups stopped (existing files are kept)");
@@ -717,7 +750,13 @@ export async function mount(el) {
         if (!ok) return;
         busy(btn, true, "Loading demo…");
         try {
-          const r = await importBulk(demoPayload());
+          // Demo import writes to the active backend and is protected by server-side
+          // manager authorization. Re-establish a fresh server session when a local
+          // session outlives its Google Sheets token, then retry only an auth failure.
+          const r = await withSettingsAuthRetry(
+            () => importBulk(demoPayload()),
+            "Google Sheets sign-in is required to load demo data.",
+          );
           toast(`Demo ready: ${r.productsAdded} products and ${r.salesAdded} sample bills added`);
           location.hash = "#/dashboard";
         } finally {
@@ -789,7 +828,7 @@ export async function mount(el) {
     const prev = state.settings;
     state.settings = { ...prev, ...read() }; // money() formatting reads the live currency
     try {
-      $("#setPreview", el).innerHTML = receiptHtml(SAMPLE_SALE, SAMPLE_ITEMS, state.settings);
+      $("#setPreview", el).innerHTML = receiptHtml({ ...SAMPLE_SALE, cashierName: currentStaff()?.name || currentStaff()?.username || "—", counterCode: getDevice().code }, SAMPLE_ITEMS, state.settings);
     } finally {
       state.settings = prev;
     }
@@ -858,6 +897,7 @@ export async function mount(el) {
       // admin session is valid before uploading branding files or saving settings.
       await ensureSettingsAuth();
       const values = read();
+      values.brandTagline = $("[name=\"brandTagline\"]", form).value.trim();
       // Keep the select-backed setting explicit. This avoids FormData edge cases after
       // a live-preview change event and makes the persisted value authoritative.
       values.productLabelCode = $("[name=\"productLabelCode\"]", form).value;
@@ -951,4 +991,31 @@ export async function mount(el) {
   renderOffline();
   renderBackup();
   renderTransfer();
+  // Settings sections are independent accordions. Reattach controls after dynamic panels rerender.
+  const settingsGrid = $(".settings-grid", el);
+  const pageHead = $(".page-head", el);
+  if (pageHead && !$("#settingsExpandAll", el)) {
+    const allButton = document.createElement("button"); allButton.type = "button"; allButton.id = "settingsExpandAll"; allButton.className = "btn btn-outline btn-sm"; allButton.textContent = "Collapse all";
+    ($(".actions", pageHead) || pageHead).appendChild(allButton);
+    allButton.addEventListener("click", () => {
+      const cards = [...(settingsGrid?.querySelectorAll(".card") || [])];
+      const collapse = cards.some(card => card.dataset.accordionCollapsed !== "true");
+      cards.forEach(card => { card.dataset.accordionCollapsed = String(collapse); const head = [...card.children].find(node => node.classList?.contains("sec-head")); [...card.children].forEach(node => { if (node !== head) node.hidden = collapse; }); const toggle = head?.querySelector("[data-settings-accordion]"); if (toggle) { toggle.textContent = collapse ? "+" : "−"; toggle.setAttribute("aria-expanded", String(!collapse)); } });
+      allButton.textContent = collapse ? "Expand all" : "Collapse all";
+    });
+  }
+  const setupAccordions = () => {
+    for (const card of settingsGrid?.querySelectorAll(".card") || []) {
+      const head = [...card.children].find(node => node.classList?.contains("sec-head")); if (!head) continue;
+      if (!card.dataset.accordionCollapsed) card.dataset.accordionCollapsed = "false";
+      if (!head.querySelector("[data-settings-accordion]")) { const toggle = document.createElement("button"); toggle.type = "button"; toggle.dataset.settingsAccordion = "1"; toggle.className = "icon-btn"; toggle.style.marginLeft = "auto"; toggle.textContent = card.dataset.accordionCollapsed === "true" ? "+" : "−"; toggle.setAttribute("aria-expanded", String(card.dataset.accordionCollapsed !== "true")); toggle.setAttribute("aria-label", "Expand or collapse section"); head.appendChild(toggle); }
+      const hidden = card.dataset.accordionCollapsed === "true"; [...card.children].forEach(node => { if (node !== head) node.hidden = hidden; });
+    }
+  };
+  if (settingsGrid && !settingsGrid.dataset.accordionsBound) {
+    settingsGrid.dataset.accordionsBound = "true";
+    settingsGrid.addEventListener("click", event => { const toggle = event.target.closest("[data-settings-accordion]"); if (!toggle) return; const card = toggle.closest(".card"); const head = toggle.closest(".sec-head"); const hidden = card.dataset.accordionCollapsed !== "true"; card.dataset.accordionCollapsed = String(hidden); [...card.children].forEach(node => { if (node !== head) node.hidden = hidden; }); toggle.textContent = hidden ? "+" : "−"; toggle.setAttribute("aria-expanded", String(!hidden)); const allButton = $("#settingsExpandAll", el); if (allButton) allButton.textContent = [...settingsGrid.querySelectorAll(".card")].every(card => card.dataset.accordionCollapsed === "true") ? "Expand all" : "Collapse all"; });
+    const observer = new MutationObserver(setupAccordions); observer.observe(settingsGrid, { childList: true, subtree: true }); cleanup.push(() => observer.disconnect());
+  }
+  setupAccordions();
 }

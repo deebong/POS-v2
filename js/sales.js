@@ -37,11 +37,11 @@ export function showInvoiceModal(sale, items, { success = false, onNewSale, onCh
       window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, "_blank", "noopener");
     };
   }
-  modal.$("[data-print]").onclick = () => printHtml(receiptHtml(sale, items));
+  modal.$("[data-print]").onclick = () => printHtml(receiptHtml(sale, items), `${sale.invoiceNo}-Receipt`);
   const gst = modal.$("[data-gst]");
   const gstDoc = modal.$("[data-gst-doc]");
   const gstHtml = () => gstBillHtml(sale, items, state.settings);
-  if (gst) gst.onclick = () => printHtml(gstHtml());
+  if (gst) gst.onclick = () => printHtml(gstHtml(), `${sale.invoiceNo}-GST-Bill`);
   if (gstDoc) gstDoc.onclick = () => downloadFile(`${sale.invoiceNo}-GST-Bill.doc`, "\uFEFF" + gstHtml(), "application/msword;charset=utf-8");
   const n = modal.$("[data-new]");
   if (n) {

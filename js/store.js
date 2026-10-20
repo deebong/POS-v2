@@ -78,7 +78,20 @@ export async function loadAll() {
   state.meta.syncing = true;
   emit("sync:status");
   try {
-    const incoming = await backend.bootstrap({ days: HISTORY_DAYS });
+    let incoming;
+    try {
+      incoming = await backend.bootstrap({ days: HISTORY_DAYS });
+    } catch (error) {
+      if (!navigator.onLine || getConfig().mode === "local" || !/authentication required|session expired|sign in again/i.test(String(error?.message || error))) throw error;
+      // An expired cloud session must be renewed interactively before retrying a
+      // protected read; do not bypass authorization or silently use stale server data.
+      const { clearAuthToken } = await import("./auth.js");
+      const { loginStaff } = await import("./staff.js");
+      clearAuthToken();
+      const signedIn = await loginStaff(true);
+      if (!signedIn) throw error;
+      incoming = await backend.bootstrap({ days: HISTORY_DAYS });
+    }
     const hadData = Boolean(state.all.length || state.sales.length);
     const incomingProducts = Array.isArray(incoming?.products) ? incoming.products : [];
     const incomingSales = Array.isArray(incoming?.sales) ? incoming.sales : [];

@@ -81,13 +81,14 @@ function visibleProducts() {
   if (S.category === "popular") {
     const counts = new Map();
     for (const sale of state.sales.filter(x => x.status === "completed")) for (const it of state.items.get(sale.id) || []) counts.set(it.productId, (counts.get(it.productId) || 0) + Number(it.qty || 0));
-    return state.products.filter(p => counts.has(p.id)).sort((a,b) => (counts.get(b.id)||0) - (counts.get(a.id)||0)).slice(0, 24).filter(p => !q || p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q) || (p.barcode||"").toLowerCase().includes(q));
+    return state.products.filter(p => counts.has(p.id)).sort((a,b) => (counts.get(b.id)||0) - (counts.get(a.id)||0)).slice(0, 24).filter(p => !q || p.name.toLowerCase().includes(q) || (p.nameTa || "").toLowerCase().includes(q) || p.sku.toLowerCase().includes(q) || (p.barcode||"").toLowerCase().includes(q));
   }
   return state.products.filter(
     (p) =>
       (S.category === "all" || p.category === S.category) &&
       (!q ||
         p.name.toLowerCase().includes(q) ||
+        (p.nameTa || "").toLowerCase().includes(q) ||
         p.sku.toLowerCase().includes(q) ||
         (p.barcode || "").toLowerCase().includes(q) ||
         p.category.toLowerCase().includes(q)),
@@ -175,7 +176,7 @@ function renderGrid() {
         <span class="sku">${esc(p.sku)}</span>
         ${q ? `<span class="in-cart">${num(q)}</span>` : ""}
         <div class="pic" style="--tint:${catTint(p.category)}">${mediaHtml(p)}</div>
-        <div class="nm">${esc(p.name)}</div>
+        <div class="nm">${esc(p.name)}${p.nameTa ? `<small class="secondary-name" lang="ta">${esc(p.nameTa)}</small>` : ""}</div>
         <div class="row">
           <div class="price">${money(p.price)}<small>/${esc(p.unit)}</small></div>
           <div class="stk ${st}">${stk}</div>
@@ -205,7 +206,7 @@ function renderCart() {
         return `
         <div class="cline" data-id="${p.id}">
           <div class="thumb" style="background:${catTint(p.category)}">${mediaHtml(p)}</div>
-          <div style="min-width:0"><div class="nm" title="${esc(p.name)}">${esc(p.name)}</div><div class="unit">${money(p.price)} / ${esc(p.unit)}${p.taxRate ? ` · ${num(p.taxRate)}% ${esc(state.settings.taxLabel)}` : ""}</div></div>
+          <div style="min-width:0"><div class="nm" title="${esc(p.name)}">${esc(p.name)}${p.nameTa ? `<small class="secondary-name" lang="ta">${esc(p.nameTa)}</small>` : ""}</div><div class="unit">${money(p.price)} / ${esc(p.unit)}${p.taxRate ? ` · ${num(p.taxRate)}% ${esc(state.settings.taxLabel)}` : ""}</div></div>
           <div class="total">${money(lineTotal)}</div>
           <div class="ctrl">
             <div class="stepper">
@@ -624,10 +625,24 @@ export async function mount(el) {
 
   $("#custName", el).addEventListener("input", (e) => { S.customer.name = e.target.value; persist(); });
   $("#custPhone", el).addEventListener("input", debounce((e) => {
-    S.customer.phone = e.target.value; const raw = e.target.value.replace(/\D/g, "");
+    S.customer.phone = e.target.value;
+    const raw = e.target.value.replace(/\D/g, "");
     if (raw.length >= 7) {
-      const hit = state.sales.find(x => String(x.customerPhone || "").replace(/\D/g, "").slice(-10) === raw.slice(-10) && x.customerName);
-      if (hit) { S.customer.name = hit.customerName; $("#custName", el).value = hit.customerName; }
+      const normalized = (value) => String(value || "").replace(/\D/g, "");
+      const phoneMatches = (value) => {
+        const candidate = normalized(value);
+        return candidate.length >= 7 && (candidate === raw || candidate.slice(-10) === raw.slice(-10));
+      };
+      // Prefer the customer directory (which stores the current address), then fall
+      // back to previous invoices for legacy customers not yet in the directory.
+      const customer = state.customers.find(x => phoneMatches(x.phone));
+      const sale = customer ? null : state.sales.find(x => phoneMatches(x.customerPhone) && x.customerName);
+      if (customer || sale) {
+        S.customer.name = customer?.name || sale.customerName || S.customer.name;
+        S.customer.address = customer?.address || sale?.customerAddress || S.customer.address;
+        $("#custName", el).value = S.customer.name;
+        $("#custAddress", el).value = S.customer.address;
+      }
     }
     persist();
   }, 220));

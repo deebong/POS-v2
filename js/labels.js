@@ -20,7 +20,7 @@ export function labelSheetHtml(items, { size = "md", showPrice = true } = {}) {
       <div class="plabel sz-${size} type-${type}">
         <img class="${type === "barcode" ? "barcode-img" : "qr-img"}" alt="${type === "barcode" ? "Barcode" : "QR"} ${esc(type === "barcode" ? (p.barcode || p.sku) : p.sku)}" src="${type === "barcode" ? barcodeUrl(p.barcode || p.sku) : qrUrl(p.sku, { format: "svg" })}" />
         <div class="txt">
-          <div class="n">${esc(p.name)}</div>
+          <div class="n">${esc(p.name)}${p.nameTa ? `<small class="secondary-name" lang="ta">${esc(p.nameTa)}</small>` : ""}</div>
           <div class="s">${esc(p.sku)}</div>
           ${showPrice ? `<div class="p">${money(p.price)}<span style="font-size:.55em;font-weight:600"> /${esc(p.unit)}</span></div>` : ""}
         </div>
@@ -77,7 +77,7 @@ export async function mount(el) {
   const visible = () => {
     const q = F.search.toLowerCase();
     return state.products.filter(
-      (p) => (F.category === "all" || p.category === F.category) && (!q || p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q) || (p.barcode || "").toLowerCase().includes(q)),
+      (p) => (F.category === "all" || p.category === F.category) && (!q || p.name.toLowerCase().includes(q) || (p.nameTa || "").toLowerCase().includes(q) || p.sku.toLowerCase().includes(q) || (p.barcode || "").toLowerCase().includes(q)),
     );
   };
 
@@ -103,9 +103,9 @@ export async function mount(el) {
       <div class="label-card ${selected.has(p.id) ? "selected" : ""}" data-id="${p.id}">
         <span class="chk">${icon("check")}</span>
         <img class="${state.settings.productLabelCode === "barcode" ? "barcode-img" : "qr-img"}" loading="lazy" alt="${state.settings.productLabelCode === "barcode" ? "Barcode" : "QR"} for ${esc(state.settings.productLabelCode === "barcode" ? (p.barcode || p.sku) : p.sku)}" src="${state.settings.productLabelCode === "barcode" ? barcodeUrl(p.barcode || p.sku) : qrUrl(p.sku, { format: "svg" })}" />
-        <div class="nm">${esc(p.emoji)} ${esc(p.name)}</div>
+        <div class="nm">${esc(p.emoji)} ${esc(p.name)}${p.nameTa ? `<small class="secondary-name" lang="ta">${esc(p.nameTa)}</small>` : ""}</div>
         <div class="sk">${esc(p.sku)}</div>
-        <div class="pr">${money(p.price)}<span class="muted" style="font-size:12px;font-weight:600"> /${esc(p.unit)}</span></div>
+        ${F.showPrice ? `<div class="pr">${money(p.price)}<span class="muted" style="font-size:12px;font-weight:600"> /${esc(p.unit)}</span></div>` : ""}
       </div>`,
           )
           .join("")
@@ -129,7 +129,7 @@ export async function mount(el) {
     F.copies = Math.min(Math.max(parseInt(e.target.value, 10) || 1, 1), 50);
     updatePrintBtn();
   };
-  $("#lPrice", el).onchange = (e) => { F.showPrice = e.target.checked; };
+  $("#lPrice", el).onchange = (e) => { F.showPrice = e.target.checked; render(); };
   $("#lAll", el).onclick = () => { visible().forEach((p) => selected.add(p.id)); render(); };
   $("#lNone", el).onclick = () => { selected.clear(); render(); };
   $("#lPrint", el).onclick = () => {

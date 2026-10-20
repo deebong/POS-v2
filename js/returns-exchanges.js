@@ -2,6 +2,7 @@
 import { backend, getConfig } from "./data/backend.js";
 import { idb } from "./data/idb.js";
 import { refreshData, state } from "./store.js";
+import { requestApproval, requiredRoleForRefund } from "./approval.js";
 import { $, esc, icon, money, openModal, toast, hydrateIcons } from "./ui.js";
 
 const KEY = "returns.v1";
@@ -28,9 +29,20 @@ async function api(action, payload = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 60000);
   try {
-    const res = await fetch(cfg.url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action, ...(cfg.key ? { key: cfg.key } : {}), ...payload }), signal: ctrl.signal });
+    const { getAuthToken } = await import("./auth.js");
+    const authToken = getAuthToken();
+    const res = await fetch(cfg.url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action, ...(cfg.key ? { key: cfg.key } : {}), ...(authToken ? { authToken } : {}), ...payload }), signal: ctrl.signal });
     const out = JSON.parse(await res.text());
-    if (!out.ok) throw new Error(out.error || "Request failed");
+    if (!out.ok) {
+      const message = out.error || "Request failed";
+      if (/Authentication required or session expired|Sign in again/i.test(message)) {
+        localStorage.removeItem("freshmart.auth.token");
+        sessionStorage.removeItem("freshmart.auth.token");
+        window.dispatchEvent(new CustomEvent("auth:expired", { detail: { action, message } }));
+        throw new Error("Your server session expired. Sign in again to continue.");
+      }
+      throw new Error(message);
+    }
     return out;
   } catch (e) {
     if (e.name === "AbortError") throw new Error("Google Sheets took too long to respond. Try again.");
@@ -104,7 +116,7 @@ function transactionModal(sale, ownerEl) {
     });
     input.addEventListener("blur", () => { let q=Number(input.value||0); if(q>max) q=max; if(q<0) q=0; if(!/^(kg|l)$/i.test(item?.unit||"")) q=Math.round(q); input.value=String(q); renderTotal(); });
   });
-  const renderTotal=()=>{let returned=0,replacement=0;lines.forEach(row=>{const item=original.find(x=>Number(x.id)===Number(row.dataset.item));const q=Number(row.querySelector("[name=qty]").value||0);returned+=q*Number(item.price)*(1+Number(item.taxRate||0)/100);if(mode==="exchange"){const p=productById(row.querySelector("[name=replacement]").value);const rq=Number(row.querySelector("[name=replacementQty]").value||0);if(p)replacement+=rq*Number(p.price)*(1+Number(p.taxRate||0)/100);}});const diff=replacement-returned;m.$("#returnTotal").innerHTML=`<span>Returned value <b>${money(returned)}</b></span>${mode==="exchange"?`<span>Replacement value <b>${money(replacement)}</b></span>`:""}<strong>${diff>0?`Collect ${money(diff)}`:diff<0?`Refund ${money(Math.abs(diff))}`:"No balance due"}</strong>`;};
+  const renderTotal=()=>{let returned=0,replacement=0;lines.forEach(row=>{const item=original.find(x=>Number(x.id)===Number(row.dataset.item));const q=Number(row.querySelector("[name=qty]").value||0);returned+=q*Number(item.price)*(1-(Number(sale.subtotal)>0?Math.min(1,Math.max(0,Number(sale.discount||0)/Number(sale.subtotal))):0))*(1+Number(item.taxRate||0)/100);if(mode==="exchange"){const p=productById(row.querySelector("[name=replacement]").value);const rq=Number(row.querySelector("[name=replacementQty]").value||0);if(p)replacement+=rq*Number(p.price)*(1+Number(p.taxRate||0)/100);}});const diff=replacement-returned;m.$("#returnTotal").innerHTML=`<span>Returned value (incl. GST) <b>${money(returned)}</b></span>${mode==="exchange"?`<span>Replacement value <b>${money(replacement)}</b></span>`:""}<strong>${diff>0?`Collect ${money(diff)}`:diff<0?`Refund ${money(Math.abs(diff))}`:"No balance due"}</strong>`;};
   form.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>{mode=b.dataset.mode;form.querySelectorAll("[data-mode]").forEach(x=>x.classList.toggle("active",x===b));lines.forEach(row=>{row.querySelector(".replacement").disabled=mode!=="exchange";row.querySelector(".replacement-qty").disabled=mode!=="exchange";});m.$("#returnSave").innerHTML=`${icon("check")} Complete ${mode}`;hydrateIcons(m.$("#returnSave"));renderTotal();});
   form.addEventListener("input",renderTotal); form.addEventListener("change",renderTotal);
   const cancel=m.$("[data-cancel]"), save=m.$("#returnSave");
@@ -114,7 +126,7 @@ function transactionModal(sale, ownerEl) {
     if(!selected.length)return toast("Select at least one item and quantity","warn");
     if(mode==="exchange"&&selected.some(x=>!x.replacementId||x.replacementQty<=0))return toast("Select a replacement product and quantity for each exchanged item","warn");
     if(selected.some(x=>x.qty>availableQty(sale,x.item)))return toast("A return quantity exceeds the remaining returnable quantity","error");
-    const payload={invoiceNo:sale.invoiceNo,type:mode,settlementMethod:m.$("#settlement").value,reason:m.$("#returnReason").value,items:selected.map(x=>{const p=x.replacementId?productById(x.replacementId):null;return {originalSaleItemId:x.item.id,productId:x.item.productId,sku:x.item.sku,name:x.item.name,unit:x.item.unit,qty:x.qty,unitPrice:Number(x.item.price),taxRate:Number(x.item.taxRate||0),replacementProductId:p?.id||0,replacementSku:p?.sku||"",replacementName:p?.name||"",replacementQty:x.replacementQty,replacementPrice:p?.price||0,replacementTaxRate:p?.taxRate||0};})};
+    const payload={invoiceNo:sale.invoiceNo,type:mode,settlementMethod:m.$("#settlement").value,reason:m.$("#returnReason").value,items:selected.map(x=>{const p=x.replacementId?productById(x.replacementId):null;return {originalSaleItemId:x.item.id,productId:x.item.productId,sku:x.item.sku,name:x.item.name,unit:x.item.unit,qty:x.qty,unitPrice:Number(x.item.price)*(1-(Number(sale.subtotal)>0?Math.min(1,Math.max(0,Number(sale.discount||0)/Number(sale.subtotal))):0)),taxRate:Number(x.item.taxRate||0),replacementProductId:p?.id||0,replacementSku:p?.sku||"",replacementName:p?.name||"",replacementQty:x.replacementQty,replacementPrice:p?.price||0,replacementTaxRate:p?.taxRate||0};})};
     save.disabled=true;
     try{
       const returnedValue = payload.items.reduce((sum, x) => sum + x.qty * x.unitPrice * (1 + x.taxRate / 100), 0);

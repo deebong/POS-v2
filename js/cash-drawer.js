@@ -8,7 +8,6 @@ import { currentStaff } from "./staff.js";
 
 const KEY = "cash.drawer.v2";
 const LEGACY_KEY = "cash.drawer.v1";
-const CASHIER = "Anand";
 const COUNTER = "Counter 1";
 let db = { active: null, sessions: [], movements: [] };
 let ready = null;
@@ -53,6 +52,7 @@ function cashIn(session) { return db.movements.filter((m) => m.sessionId === ses
 function cashOut(session) { return db.movements.filter((m) => m.sessionId === session?.id && m.type === "out").reduce((s, m) => s + n(m.amount), 0); }
 function expected(session) { return session ? round(n(session.openingFloat) + cashSales(session) + cashIn(session) - cashOut(session)) : 0; }
 function statusLabel() { return db.active ? "Open" : "Closed"; }
+function operatorName() { return String(currentStaff()?.name || "").trim() || "Unknown operator"; }
 function sessionDuration(session) {
   if (!session) return "—";
   const ms = Math.max(0, (session.closedAt ? new Date(session.closedAt) : new Date()) - new Date(session.openedAt));
@@ -140,7 +140,7 @@ function openDrawerModal() {
     if (db.active) return m.close();
     const at = now();
     const id = `DR-${at.slice(0,10).replaceAll("-", "")}-${String(db.sessions.length + 1).padStart(4, "0")}`;
-    db.active = { id, openedAt: at, openedBy: CASHIER, by: operatorName(), counter: COUNTER, openingFloat: opening, openingNote: m.$("#drawerOpeningNote").value.trim() };
+    db.active = { id, openedAt: at, openedBy: operatorName(), by: operatorName(), counter: COUNTER, openingFloat: opening, openingNote: m.$("#drawerOpeningNote").value.trim() };
     await save(); m.close(); render(); toast("Cash drawer opened");
   };
 }
@@ -168,7 +168,7 @@ function openCloseModal() {
   if (!active) return;
   const exp = expected(active);
   const m = openModal({
-    title: "Close cash drawer", sub: `${CASHIER} · ${COUNTER}`,
+    title: "Close cash drawer", sub: `${operatorName()} · ${COUNTER}`,
     body: `<div class="close-summary"><div><span>Expected cash</span><b>${money0(exp)}</b></div><div><span>Cash sales</span><b>${money0(cashSales(active))}</b></div><div><span>Cash in / out</span><b>${money0(cashIn(active))} / ${money0(cashOut(active))}</b></div></div><div class="field" style="margin-top:18px"><label>Counted cash</label><div class="money-input"><span>${esc(state.settings.currency)}</span><input class="input" id="countedCash" inputmode="decimal" placeholder="0.00" autofocus /></div><span class="hint">Enter the actual physical cash counted in the drawer.</span></div><div class="field" style="margin-top:14px"><label>Closing note <span class="muted">(optional)</span></label><textarea class="textarea" id="closeNote" rows="2" placeholder="Anything to record about the closing count"></textarea></div>`,
     footer: `<button class="btn btn-outline" data-close>Cancel</button><button class="btn btn-primary" id="drawerCloseSave">${icon("check")} Close drawer</button>`,
   });
