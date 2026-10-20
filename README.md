@@ -1,743 +1,282 @@
-## Current project status — 21 October 2026
+# FreshMart POS — Source Repository
 
-> **Status distinction:** the feature screens and local workflows are not the same as a fully verified production POS. This source repository is the authoritative development source; staging acceptance is expected to use `deebong/POS-v2-staging` and the disposable `POS_test_v1` Google Sheet. Do not treat a green CI run as proof of live Google Sheets, physical hardware, security, or every end-to-end workflow.
+**Status reviewed:** 21 October 2026  
+**Repository role:** authoritative development source for the POS frontend, Google Apps Script backend, tests and deployment workflows.
 
-### Repository and deployment roles
-- **Private source:** `deebong/POS-platform-v2` — runtime source under `public/pos/`, Apps Script source, tests, release workflows and regression log.
-- **Staging deployment:** `deebong/POS-v2-staging` — isolated public staging frontend for acceptance tests only.
-- **Production-facing static repository:** `deebong/POS-v2` — public frontend repository. This was updated by an automated publish workflow after a push to `main`; do not infer that it was a deliberate release approval.
-- **Staging data:** only use the disposable `POS_test_v1` Sheet and its dedicated Apps Script deployment. Keep an explicit private mapping from Sheet to deployment URL and candidate commit.
+> **Release status:** The application has a broad set of implemented screens and local workflows, but it is not certified bug-free or fully production-ready. Several modules still need live Google Sheets, security, multi-counter and target-device verification. Read the current regression ledger before deciding release readiness.
 
-### Known limitations still requiring verification
-- Cash Drawer, Day Close and Audit Log are implemented locally but do not yet have equivalent central Google Sheets schemas/sync in the documented backend.
-- Loyalty has a local module, but complete checkout earning/redemption/reversal and a central ledger remain incomplete.
-- Staff/role UI exists, but server-authoritative authentication, session expiry and fully verified multi-device/store isolation remain release risks.
-- Gateway labels/tender options are not a live payment-gateway integration.
-- Browser-based scanning/printing does not certify ESC/POS, weighing-machine, drawer-pulse or other hardware compatibility.
-- Settings persistence, operator switching/navigation refresh, backup/restore, live returns/stock adjustment, PWA cache/update behavior, Tamil output and physical printing require explicit acceptance evidence.
+## 1. Repository map and release targets
 
-### Required release practice
-1. Keep source changes in a single identified candidate branch; record the exact commit in `docs/REGRESSION-AND-RELEASE-LOG.md`.
-2. Test and deploy the candidate to `POS-v2-staging` first using disposable data.
-3. Mark each acceptance item as code-present, automated-test-passed, live-backend-verified, target-device-verified or unknown.
-4. Do not publish production as a side effect of normal development. Verify workflow conditions and require an explicit production release decision.
-5. Do not create another disposable Sheet unless a specific test requires it; map existing Sheets/deployments before starting a fresh installation.
-
-### Installation wizard status
-The setup process has covered store profile, administrator identity, storage/backend connection, language/preferences, branding and completion/review areas. The wizard's step count and complete behavior have varied; do not assume six independent steps or all fields are fully working without checking staging. Verify that admin identity, configured phone, branding/tagline and storage settings persist after setup, navigation, reload and re-login. If the backend says it is already installed, identify the connected Sheet/deployment before attempting recovery; do not bypass the warning.
-
----
-
-# FreshMart POS
-
-A grocery Point-of-Sale application built as an installable PWA with a plain HTML/CSS/JavaScript runtime, offline-first local storage, and optional Google Sheets synchronization.
-
-> **Current implementation:** the production-facing application is `public/pos/`. The `src/` directory is the Next.js/React preview-host scaffold and is not the POS runtime.
-
-## Current architecture
-
-- **Frontend:** plain HTML + CSS + JavaScript ES modules; no framework and no build step for the POS runtime.
-- **Local database:** IndexedDB.
-- **Cloud database / sync:** Google Sheets through Google Apps Script.
-- **Offline mode:** supported through the local adapter and service worker.
-- **Recommended storage mode:** This PC + Google Sheets (offline-first).
-- **PWA:** installable on supported Chrome/Edge browsers.
-- **Windows 7:** a dedicated local-server kit is included for the supported legacy browser versions.
-- **Demo mode:** available without connecting Google Sheets.
-
----
-
-## Module inventory — code presence versus acceptance status
-
-The table below records features present in the UI/codebase. “Implemented” does not mean every path is verified against a live Sheet, multiple devices or physical hardware. Known backend, security and acceptance gaps are listed in the current status section above.
-
-The current navigation and implementation contain these modules:
-
-| Module | Current status | Main capabilities |
+| Repository | Role | Working rule |
 |---|---|---|
-| Dashboard | Implemented | Sales snapshot, KPIs, recent activity and operational overview |
-| POS / Billing | Implemented | Product search, categories, cart, quantity controls, discounts, tax, customer details, cash/card/UPI tender selection, hold/restore, QR/barcode scanning, checkout and receipt flow |
-| Inventory | Implemented | Product CRUD, SKU/barcode, price/cost/tax, stock, reorder level, product images, CSV import/export, stock adjustment |
-| Product Labels | Implemented | Search/filter, category filter, label size, copies, price toggle, QR/barcode labels, select all, print |
-| Invoices | Implemented | Sales history, invoice search, invoice details, reprint/receipt flow, void handling, customer purchase history |
-| Customers | Implemented | Customer directory derived from sales, purchase counts, spend, average bill and invoice history |
-| Suppliers & Purchases | Implemented | Supplier directory, supplier CRUD, activate/deactivate, purchase receiving, purchase history and incoming stock |
-| Returns & Exchanges | Implemented | Invoice lookup, partial returns, exchanges, refund/difference calculation, stock restoration, replacement stock validation and return history |
-| Cash Drawer | Local workflow present; central sync incomplete | Open/close drawer, opening float, cash in/out, expected cash, counted cash, variance and previous sessions |
-| Day Close | Local workflow present; central sync incomplete | Business-date reconciliation, sales/payment/refund/tax summary, drawer reconciliation, completed-sales history, CSV export and finalization |
-| Audit Log | Local workflow present; central audit sync incomplete | Operator activity history, filters, search, CSV export and local clearing |
-| Low Stock | Implemented | Out-of-stock/low-stock detection, reorder gap, cost value, filters, search, restock action and CSV export |
-| Reports | Basic reports present; advanced reports incomplete | Date-range sales report, net sales, average bill, refunds, payment methods, sales by day, top products, reconciliation and CSV export |
-| Loyalty | Local module present; checkout integration and central ledger incomplete | Member directory, earn-rate configuration, tiers, points balance, member ledger, manual adjustments, redemption and CSV export |
-| Staff & Users | Local role/PIN UI present; server-authoritative sessions incomplete | Staff directory, Admin/Manager/Cashier roles, permission model, salted PBKDF2 PINs, operator switching, activation/deactivation and PIN reset |
-| Settings | Present; persistence and install-flow acceptance pending | Storage mode, Google Sheets connection, import/export, store profile, appearance, product image settings, backup/offline controls and app installation support |
-
-### Recent stability fixes
-
-The following recurring table-rendering issue has been audited and fixed in all three affected modules:
-
-- **Day Close → Completed sales**
-- **Audit Log → Activity history**
-- **Loyalty → Loyalty members**
-
-The affected tables now use an isolated scroll/paint context, opaque sticky header cells, explicit `border-spacing: 0`, a higher header stacking level and a non-positioned body layer. The module entrance transform is also disabled for these table views so it cannot interfere with sticky table painting.
-
----
-
-## Historical development audit — 1 October 2026 (baseline, not current status)
-
-> This section records the state and recommendations as of 1 October 2026. It is retained for history, but it is **not a current status report**. The current implementation, remaining gaps and next actions are summarized in the 21 October 2026 status section at the top of this README. Items below may have been implemented, changed or superseded since the baseline; verify against the current code and regression log before acting on them.
-
-The UI/module set is now substantially complete for the current POS scope. The remaining work is primarily **production integration, security, multi-counter consistency and operational hardening**, rather than adding another basic screen immediately.
-
-### A. High-priority work still required
-
-#### 1. Move locally stored operational modules to Google Sheets
-
-The main product/sales data path is already designed around Google Sheets, but several newer modules still keep their records only in IndexedDB on the current PC.
-
-Currently local-first/local-only:
-
-- Cash Drawer sessions and movements
-- Day Close finalization records
-- Audit Log
-- Loyalty configuration and manual point adjustments
-- Reports consume local state and local return data
-
-This is acceptable for a single-PC demo, but it is not sufficient for a multi-counter production POS. The next backend phase should add dedicated Sheets schemas/actions and offline sync queues for these domains.
-
-Recommended Sheets/tables:
-
-- `CashDrawerSessions`
-- `CashDrawerMovements`
-- `DayClosings`
-- `AuditLog`
-- `LoyaltyMembers`
-- `LoyaltyLedger`
-- optionally `ReportSnapshots` only if historical snapshots are required; most reports should remain derived from transactional data
-
-Each syncable record should have an idempotent `opId`, device/counter ID, timestamps and server-side validation.
-
-#### 2. Finish Loyalty integration with checkout
-
-The Loyalty screen currently derives member balances from completed customer sales and stores manual adjustments locally. It does **not yet form a complete checkout loyalty workflow**.
-
-Still required:
-
-- Identify/select a loyalty customer during checkout.
-- Show current points balance before payment.
-- Earn points automatically when a qualifying sale is completed.
-- Redeem points as a payment/discount rule during checkout.
-- Prevent redemption beyond the available balance.
-- Reverse/adjust points when a sale is voided or returned.
-- Store the loyalty ledger centrally when Google Sheets mode is enabled.
-- Define configurable earn/redeem rules rather than only the current simple spend-rate model.
-
-#### 3. Staff / user management and operator identity\n\nA local Staff & Users module is now implemented as the first step of the operator/security layer. It provides Admin, Manager and Cashier roles, a permission matrix, salted PBKDF2 PIN storage, operator switching, account activation/deactivation, PIN reset and dynamic operator attribution in the shell, audit log and cash drawer.\n\nThe current implementation is deliberately local-first so it works offline. It is **not yet a server-authoritative multi-counter authentication system**. Google Sheets staff synchronization, server-side authorization, session expiry/lock policy and cross-device identity reconciliation remain required before production deployment.\n\n#### 4. Replace hard-coded operator identity with full cashier/session security
-
-The current UI displays **Anand Ibrahim / Anand I** and several operational modules use fixed operator/counter values. This is intentional demo data, but it is not an authentication system.
-
-Production work should introduce:
-
-- Cashier/staff records
-- Login/session handling
-- PIN/password or another appropriate local authentication method
-- Roles such as Cashier, Manager and Admin
-- Permission checks for voids, refunds, price changes, stock adjustments, drawer operations, reports and settings
-- Per-user audit attribution
-- Counter/device identity
-- Session timeout/lock
-
-The application should continue to work offline, so authentication/session design must not depend on a live network for every transaction.
-
-#### 5. Payment integration
-
-Cash, card and UPI/QR currently exist as POS tender types, but the repository does not contain a live payment-gateway integration such as Razorpay, terminal API integration or payment webhook reconciliation.
-
-If real electronic payments are required, add this as a separate integration layer rather than changing the core checkout calculation logic.
-
-Required pieces would include:
-
-- UPI intent/QR workflow if required
-- Payment order creation
-- Gateway callback/webhook verification
-- Payment status reconciliation
-- Failed/pending payment recovery
-- Refund support
-- Duplicate-payment protection
-- Payment reference IDs on invoices
-
-#### 6. Hardware integration
-
-The application currently provides browser-based scanning and browser printing. A production retail deployment may additionally require:
-
-- ESC/POS thermal receipt printing
-- Barcode scanner keyboard/USB compatibility verification
-- Automatic cash-drawer pulse through the receipt printer
-- Customer display support, if required
-- Label-printer profiles
-- Hardware diagnostics in Settings
-
-These should be optional adapters so the web/PWA version continues to work without proprietary drivers.
-
----
-
-### B. Important reporting and business functionality still to develop
-
-#### 7. Advanced reports / analytics
-
-The current Reports module covers the basic operational report set. A later reporting phase should add:
-
-- Gross margin / profit reporting using product cost
-- Category performance
-- Cashier performance
-- Payment reconciliation
-- Discount analysis
-- Tax/GST summary
-- Refund/return analysis
-- Supplier purchase analysis
-- Stock valuation
-- Inventory turnover
-- Dead/slow-moving stock
-- Hourly sales heatmap
-- Day/week/month comparisons
-- Exportable detailed datasets
-- Optional dashboard charts
-
-#### 8. GST / tax compliance reporting
-
-The POS already stores tax rates and store GST information, but a dedicated compliance/reporting layer is not yet present.
-
-Potential scope:
-
-- Taxable value by rate
-- CGST/SGST/IGST breakup where applicable
-- HSN/SAC support if required
-- GST-period reports
-- Tax-inclusive/exclusive configuration
-- Credit/refund treatment
-- Export format suitable for accounting workflows
-
-This should be designed around the actual business's accounting requirements before implementation.
-
-#### 9. Supplier and purchasing expansion
-
-Purchases currently cover the core supplier and incoming-stock workflow. Production expansion can add:
-
-- Purchase returns
-- Supplier payment tracking
-- Outstanding supplier balances
-- Purchase-order workflow
-- Expected delivery dates
-- Cost-history analysis
-- Supplier performance
-- Purchase approval states
-
-#### 10. Inventory expansion
-
-The inventory foundation is implemented. Remaining advanced inventory features include:
-
-- Batch/lot tracking
-- Expiry dates and shelf life
-- Stock transfer between counters/locations
-- Stocktake/count sessions
-- Variance approval
-- Barcode generation/printing beyond current labels
-- Product bundles/composite products
-- Multiple units of measure
-- Weighted barcode support where required
-- Purchase-cost history
-- Automatic reorder suggestions
-
-The existing `transfer.js` and related foundations should be reviewed before duplicating functionality.
-
----
-
-### C. Customer and retail engagement work
-
-#### 11. Customer insights
-
-Customers currently provide directory and purchase-history information. A fuller CRM layer could add:
-
-- Customer segmentation
-- New vs returning customers
-- Visit frequency
-- Average order value trends
-- Last-purchase reminders
-- Favorite products/categories
-- Churn/inactivity indicators
-- Birthday/anniversary fields if the business wants them
-
-#### 12. Offers and promotions
-
-Not yet a dedicated module. Potential scope:
-
-- Percentage/amount discounts
-- Product-level promotions
-- Buy X Get Y
-- Category promotions
-- Time-based offers
-- Coupon codes
-- Loyalty-member offers
-- Promotion validity and usage limits
-
-Promotion rules should be evaluated by the same pricing engine used by checkout so receipts and reports remain consistent.
-
----
-
-### D. Operational / future feature candidates
-
-These are not required to complete the current core POS but are natural later phases:
-
-- Delivery slots / delivery orders
-- ETA/ETD tracking
-- Today's menu / scheduled menu
-- Recipe management
-- Nutritional information
-- Customer complaints and returns case management
-- Voice search
-- Smart notifications/push notifications
-- Multi-language UI
-- Multi-store / branch management
-- Central admin dashboard
-- Subscription/licensing system
-- Cloud user administration
-- Advanced performance monitoring
-
-These should be implemented only after the core transaction, sync and authentication layers are production-stable.
-
----
-
-## Production-hardening audit
-
-### Data and sync
-
-The existing architecture already has several strong foundations:
-
-- IndexedDB local storage
-- Offline outbox/sync in hybrid mode
-- Unique `opId` handling
-- Google Apps Script locking for server writes
-- Device-scoped invoice numbers
-- Periodic synchronization
-- Local backup support
-
-The next hardening step is to make the newer modules follow the same architecture rather than creating separate local-only stores.
-
-### Performance
-
-The POS keeps data in memory after bootstrap and uses IndexedDB for local persistence. Google Apps Script remains a network boundary, so production performance should avoid fetching entire historical datasets whenever a page needs one record.
-
-Recommended next optimization pass:
-
-- Keep a single in-memory normalized store for all synced datasets.
-- Use IndexedDB as the first render source.
-- Fetch only changed/new records where possible.
-- Add timestamps/version numbers to bootstrap responses.
-- Avoid duplicate bootstrap requests during navigation.
-- Debounce repeated refresh requests.
-- Keep page rendering independent of the network once local data exists.
-- Move large historical searches to server-side query actions.
-- Add measurable navigation/fetch timings to the Performance module.
-
-The navigation layer already contains a navigation sequence guard so stale asynchronous page loads do not replace a newer route. That pattern should remain mandatory for future modules.
-
-### Caching / PWA
-
-`sw.js` provides application-shell caching and must be version-bumped whenever files under `public/pos` change. Future updates should also verify that new module assets are included in the precache list and that old service-worker caches are removed cleanly.
-
-### Error handling
-
-Future modules should follow the existing application standards:
-
-- Never attach an event handler to an element without checking it exists.
-- Do not let an optional UI element failure crash the whole page.
-- Guard async navigation against stale results.
-- Keep data writes idempotent.
-- Display recoverable sync errors without losing local data.
-- Keep modal Cancel/Close controls functional and consistently wired.
-- Test empty, loading, offline and error states for every module.
-
----
-
-## Google Sheets backend
-
-The main Apps Script backend is `public/pos/apps-script/Code.gs`.
-
-### Core Sheets
-
-The main backend currently manages:
-
-- `Products`
-- `Sales`
-- `SaleItems`
-- `StockMovements`
-- `Settings`
-- `SyncLog`
-
-### Procurement extension
-
-`public/pos/apps-script/Procurement.gs` adds:
-
-- `Suppliers`
-- `Purchases`
-- `PurchaseItems`
-- `ProcurementSyncLog`
-
-### Returns extension
-
-`public/pos/apps-script/Returns.gs` adds:
-
-- `Returns`
-- `ReturnItems`
-- `ReturnsSyncLog`
-
-Cash Drawer, Day Close, Audit Log and Loyalty do not yet have equivalent central Sheets schemas in the current backend and therefore remain local operational stores. This is one of the main remaining production tasks.
-
----
-
-## File structure — source tree guide
-
-This structure is a guide to the runtime layout, not a claim that every listed module is complete. The actual tree has evolved since the original 1 October audit; verify paths against the current branch before making changes.
+| [POS-platform-v2](https://github.com/deebong/POS-platform-v2) | Private source, Apps Script, tests, workflow and documentation | Authoritative place for code changes |
+| [POS-v2-staging](https://github.com/deebong/POS-v2-staging) | Public staging frontend | Required target for acceptance testing; use disposable data |
+| [POS-v2](https://github.com/deebong/POS-v2) | Production-facing static frontend | Do not publish without an explicit release decision |
+
+The current release workflow, `.github/workflows/ci-publish.yml`, has previously published to `POS-v2` after a successful push to `main`. This caused a production-facing deployment even though the intended testing target was staging. **A green CI run is not release approval.** Inspect the workflow conditions before merging, dispatching or changing branch protection; do not assume production is protected simply because staging exists.
+
+### Data environments
+
+Use the designated disposable `POS_test_v1` Google Sheet and its dedicated Apps Script deployment for the current staging acceptance run. Keep a private mapping of test label → Sheet → Apps Script `/exec` URL → source commit → staging build. Do not create more Sheets without a specific test need, and do not place credentials or private setup codes in this README.
+
+## 2. Current architecture
+
+The POS runtime is a plain HTML/CSS/JavaScript progressive web app under `public/pos/`. The POS runtime does not require the Next.js/React scaffold under `src/`.
+
+- **UI/runtime:** `public/pos/index.html`, CSS and JavaScript ES modules.
+- **Local storage:** IndexedDB through the data adapters.
+- **Cloud backend:** Google Sheets through Google Apps Script.
+- **Sync/offline:** local, hybrid and Sheets adapters, sync engine and service worker. Offline queueing does not itself guarantee that every record type is synchronized or conflict-safe.
+- **PWA:** `manifest.webmanifest` and `sw.js`.
+- **Hosting:** static hosting such as GitHub Pages.
+- **Windows compatibility:** `windows-kit/` and `tests/compat-win7.mjs` provide a compatibility path, but actual target PC/browser behavior must be tested.
+- **Preview scaffold:** `src/` and Next.js configuration are for the preview host, not the POS runtime.
+
+### Storage modes
+
+| Mode | Main data location | Important limitation |
+|---|---|---|
+| This PC only | Browser IndexedDB | Data is device/browser-specific; export and backup must be verified |
+| This PC + Google Sheets | IndexedDB plus Apps Script/Sheets sync | Verify queued writes, retries, conflict behavior and actual Sheet records |
+| Google Sheets/live access | Cloud-backed operations where supported | Not equivalent to hybrid offline operation |
+
+A configured Apps Script URL or a successful health response is not proof that all actions are connected, authorized or syncing correctly. After changing Apps Script source, deploy a new Web App version and confirm that the frontend uses the intended deployment URL.
+
+## 3. Installation wizard and first-run setup
+
+The installation flow has evolved; do not assume a specific number of screens without inspecting the current staging build. The intended setup areas are:
+
+1. Store/business profile and contact numbers.
+2. Initial administrator identity and access.
+3. Storage mode and Google Sheets / Apps Script connection.
+4. Language and business preferences where available.
+5. Branding: colors, appearance, logo/favicon, tagline and receipt branding where supported.
+6. Review, initialization and entry into the POS.
+
+The existence of a setup screen does not certify every field or recovery path. Previously reported acceptance issues include the dashboard displaying the wrong administrator name, a default phone number not taken from setup, tagline/branding values reverting, and stale Apps Script version warnings. Verify configured values after setup, navigation, reload and re-login.
+
+### Safe installation/reinstallation
+
+- Back up local data before clearing browser storage or uninstalling/reinstalling the PWA.
+- If the app says the backend is already installed, first identify the connected Sheet and Apps Script deployment. Do not bypass the warning or repeatedly generate setup codes without knowing which backend is being initialized.
+- For a new test environment, use a clearly labelled disposable Sheet and deployment, and record the mapping privately.
+- Never treat a setup-code success as proof of a complete backend connection.
+
+## 4. Implemented modules — current status
+
+**Status meanings:** *Code present* means the module exists in the current source. *Local* means its state is primarily stored on this PC. *Partial / acceptance pending* means functionality exists but integration or live/device checks remain. None of these labels means “zero bugs.”
+
+| Module | Current status | Implemented scope and known boundary |
+|---|---|---|
+| Dashboard | Code present | Sales snapshot, KPIs and operational overview; verify figures against underlying transactions and active store/operator |
+| POS / Billing | Code present | Product search, categories, cart, quantities, discounts/tax, customer details, cash/card/UPI tender selection, hold/restore, checkout and receipt flow; tender selection is not gateway integration |
+| Inventory | Code present | Product CRUD, SKU/barcode, price/cost/tax, stock, reorder level, images, CSV import/export and stock adjustment; verify stable record updates and live sync |
+| Product Labels | Code present | Label search/filters, size/copies, price toggle, QR/barcode, select all and print; physical size/scaling needs target-printer verification |
+| Invoices / Sales | Code present | Sales history, invoice search/details, receipt/reprint, void flow and customer purchase history; verify sale/void/return consistency |
+| Customers | Code present | Customer directory and sales-derived counts/spend/average bill/history; verify after voids and returns |
+| Suppliers & Purchases | Code present | Supplier CRUD/activation, receiving, purchase history and incoming stock; verify backend persistence and stock effects |
+| Returns & Exchanges | Code present | Invoice lookup, partial return/exchange, refund/difference calculation, stock restoration and return history; live Sheet transaction and authorization checks remain necessary |
+| Cash Drawer | Local workflow present | Opening/closing, float, cash-in/out, expected/counted cash and variance; central Sheets persistence and physical drawer pulse are not established |
+| Day Close | Local workflow present | Business-date reconciliation, payment/refund/tax summary, drawer reconciliation, history, CSV export and finalization; central persistence/cross-counter reconciliation incomplete |
+| Audit Log | Local workflow present | Operator activity history, filters/search and CSV export; central, tamper-resistant audit trail is not established |
+| Low Stock | Code present | Low/out-of-stock detection, reorder gap, cost value, filters, restock action and CSV export; verify calculations after sync/returns |
+| Reports | Basic reporting present | Date range, net sales, average bill, refunds, payment methods, daily sales, top products, reconciliation and CSV export; advanced profit/GST/inventory/multi-counter reporting remains planned or incomplete |
+| Loyalty | Partial/local | Member directory, earn-rate/tier settings, balances, ledger view, manual adjustment, redemption and CSV export; complete checkout earn/redeem/reversal and central ledger are incomplete |
+| Staff & Users | Local security UI present | Admin/Manager/Cashier roles, permission model, salted PBKDF2 PIN handling, operator switching, activation/deactivation and PIN reset; server-authoritative identity/session security and cross-device enforcement are not certified |
+| Settings | Code present; persistence acceptance pending | Storage/Sheets connection, import/export, store profile, appearance, product-image settings, backup/offline controls and install support; verify all values persist through navigation/reload/re-login |
+| GST bill/export | Code present | GST bill/export workflow exists; verify rupee glyph, calculations, output and real print behavior |
+| Scanner / barcode / QR | Browser integration present | Scanner, barcode and QR helper modules exist; test supported devices and actual browser/device behavior |
+| PWA / offline | Code present; target-device acceptance pending | Manifest/service worker and offline paths exist; verify cache updates, installed-app reopen, offline transactions and sync recovery on target devices |
+| Backup / restore | Partial | Local export/restore and supported folder/cloud backup paths exist; verify real destination, authorization, data integrity and restore behavior |
+| Multi-store / multi-counter | Incomplete / release risk | Full store-scoped data/session isolation, server-side enforcement and end-to-end cross-counter consistency are not certified |
+| Tamil / bilingual mode | Partial / acceptance pending | Localization/schema work exists in candidate history; verify create/edit/import/export/search/labels/receipt/GST and existing-sheet migration |
+
+### Do not misread these statuses
+
+- A screen existing is not proof that its backend records persist.
+- Mock Apps Script tests do not prove live Sheet permissions, deployment URLs or actual data.
+- Browser printing/scanning does not certify physical hardware compatibility.
+- Local PIN hashing and role-based UI do not by themselves provide server-authoritative authentication.
+- A green CI run proves only the assertions executed in that run.
+
+## 5. Known regressions and acceptance checklist
+
+The detailed, commit-linked status is maintained in [`docs/REGRESSION-AND-RELEASE-LOG.md`](docs/REGRESSION-AND-RELEASE-LOG.md). Use that file as the live regression ledger; do not copy stale test claims into this README.
+
+Items requiring explicit staging or target-device evidence include:
+
+1. **Operator switching:** Manager → Cashier and Cashier → Manager must return to Dashboard, refresh page/sidebar/navigation according to the new role, and remove access to protected content from the previous operator.
+2. **Cash Drawer:** open/close, cash-in/out, operator attribution, persistence and physical drawer behavior.
+3. **Product Labels:** print dimensions and scaling on the target printer.
+4. **Returns:** live Apps Script transaction, stock adjustment, refund/difference and authorization.
+5. **Product editing:** update the same existing record/SKU, not create a duplicate.
+6. **Tamil data:** create/edit/import/export/search/labels/receipt/GST output and existing Sheet compatibility.
+7. **Settings:** configured phone, admin identity, tagline, colors and other values persist across save, navigation, reload and re-login.
+8. **Backup/restore:** correct destination, permissions, data integrity and useful failure messages.
+9. **Authentication:** wrong PIN, lockout, logout, expiry, role changes, server rejection and no stale protected UI.
+10. **Sheets sync / store isolation:** distinct store endpoints, IndexedDB/localStorage scope, queued operations, sessions, retries and conflict handling.
+11. **PWA/cache:** service-worker activation, installed-app reopen, offline behavior, update and persistence.
+12. **Receipts/GST:** rupee symbol, print preview, receipt layout, GST export and real print output.
+
+Record each item as one of: **code present**, **automated test passed**, **live backend verified**, **target device verified**, or **not verified**. Add the test run/commit and observations. Do not mark an item complete based on a nearby test that does not exercise it.
+
+## 6. Source file structure
+
+This is the current high-level tree for the POS runtime. It is intentionally a map of responsibilities, not a copy of every file or a claim that every module is complete.
 
 ```text
 POS-platform-v2/
-├── README.md
-├── package.json                 Next.js preview-host dependencies/scripts
-├── next.config.ts               Preview-host configuration
-├── drizzle.config.json          Preview-host Drizzle configuration
-├── eslint.config.mjs
-├── postcss.config.mjs
-├── tsconfig.json
-│
-├── public/pos/                  ← PRIMARY FRESHMART POS RUNTIME
-│   ├── index.html               App shell, navigation and global assets
-│   ├── manifest.webmanifest     PWA manifest
-│   ├── sw.js                    Service worker / cache version
-│   ├── .nojekyll                GitHub Pages support
-│   ├── icons/                   PWA icons
-│   ├── vendor/                  jsQR and QR-code vendor libraries
-│   │
+├── public/pos/
+│   ├── index.html
+│   ├── manifest.webmanifest
+│   ├── sw.js
+│   ├── icons/
+│   ├── vendor/
 │   ├── css/
-│   │   ├── styles.css           Main design system and shared components
-│   │   ├── pos-fixes.css        POS-specific visual fixes
-│   │   ├── custom-select.css    Select control styling
-│   │   ├── procurement.css      Suppliers & Purchases
-│   │   ├── returns.css          Returns & Exchanges
-│   │   ├── low-stock.css        Low Stock
-│   │   ├── reports.css          Reports
-│   │   ├── cash-drawer.css      Cash Drawer
-│   │   ├── eod-closing.css      Day Close
-│   │   ├── audit-log.css        Audit Log
-│   │   ├── loyalty.css          Loyalty
-│   │   └── staff.css            Staff & Users
-│   │
+│   │   ├── styles.css
+│   │   ├── pos-fixes.css
+│   │   ├── custom-select.css
+│   │   ├── procurement.css
+│   │   ├── returns.css
+│   │   ├── low-stock.css
+│   │   ├── reports.css
+│   │   ├── cash-drawer.css
+│   │   ├── eod-closing.css
+│   │   ├── audit-log.css
+│   │   ├── loyalty.css
+│   │   └── staff.css
 │   ├── js/
-│   │   ├── app.js               Router, shell, navigation guards and sync status
-│   │   ├── auth.js              Local authentication/session helpers
-│   │   ├── staff.js             Staff and role management
-│   │   ├── approval.js          Approval/manager authorization workflow
-│   │   ├── installation.js      First-run setup flow
-│   │   ├── i18n.js              Language/localization helpers
-│   │   ├── returns.js           Returns helpers
-│   │   └── gst-bill.js          GST bill/export workflow
-│   │   ├── dashboard.js         Dashboard
-│   │   ├── pos.js               POS / Billing
-│   │   ├── inventory.js         Inventory
-│   │   ├── labels.js            Product Labels
-│   │   ├── sales.js             Invoices / Sales history
-│   │   ├── customers.js         Customers
-│   │   ├── procurement.js       Suppliers & Purchases
-│   │   ├── procurement-router.js Procurement route helpers
-│   │   ├── returns-exchanges.js Returns & Exchanges
-│   │   ├── cash-drawer.js       Cash Drawer
-│   │   ├── eod-closing.js       Day Close
-│   │   ├── audit-log.js         Audit Log
-│   │   ├── low-stock.js         Low Stock
-│   │   ├── reports.js            Reports
-│   │   ├── loyalty.js            Loyalty
-│   │   ├── settings.js           Settings
-│   │   ├── scanner.js            Camera/global scanning
-│   │   ├── barcode.js            Barcode helpers
-│   │   ├── qr.js                 QR helpers
-│   │   ├── receipt.js             Receipt rendering/printing
-│   │   ├── ui.js                  Shared UI/modal/toast/icon helpers
-│   │   ├── store.js               Shared client state and data access
-│   │   ├── analytics.js            Analytics helpers
-│   │   ├── performance.js           Performance instrumentation
-│   │   ├── pwa.js                  PWA installation/update handling
-│   │   ├── media.js                Product-media helpers
-│   │   ├── theme.js                Theme/appearance handling
-│   │   ├── transfer.js             Stock-transfer foundation
-│   │   ├── custom-select.js         Custom select behavior
-│   │   └── ux-standards.js          Shared UX safeguards/standards
-│   │
+│   │   ├── app.js, ui.js, store.js, theme.js, i18n.js
+│   │   ├── installation.js, auth.js, staff.js, approval.js
+│   │   ├── dashboard.js, pos.js, inventory.js, labels.js
+│   │   ├── sales.js, customers.js, procurement.js, procurement-router.js
+│   │   ├── returns.js, returns-exchanges.js, gst-bill.js, receipt.js
+│   │   ├── cash-drawer.js, eod-closing.js, audit-log.js, low-stock.js
+│   │   ├── reports.js, loyalty.js, settings.js
+│   │   ├── scanner.js, barcode.js, qr.js, media.js
+│   │   ├── analytics.js, performance.js, pwa.js, transfer.js
+│   │   ├── custom-select.js, ux-standards.js
 │   │   └── data/
-│   │       ├── backend.js           Storage-mode selector
-│   │       ├── local-adapter.js     IndexedDB-only mode
-│   │       ├── hybrid-adapter.js    Offline-first + Google Sheets sync
-│   │       ├── sheets-adapter.js    Direct Google Sheets transport
-│   │       ├── engine.js             Local business logic / sync replay
-│   │       ├── logic.js              Shared pricing/business rules
-│   │       ├── idb.js                IndexedDB wrapper
-│   │       ├── folder-backup.js      PC folder backup
-│   │       └── sample.js              Demo data
-│   │
+│   │       ├── backend.js, engine.js, logic.js, idb.js, sample.js
+│   │       ├── local-adapter.js, hybrid-adapter.js, sheets-adapter.js
+│   │       └── folder-backup.js, cloud-backup.js
 │   └── apps-script/
-│       ├── Code.gs                  Core Google Sheets backend
-│       ├── Procurement.gs           Supplier/purchase backend extension
-│       ├── ProcurementDemoSeed.gs   Procurement demo seed data
-│       └── Returns.gs               Returns/exchanges backend extension
-│
+│       ├── Code.gs
+│       ├── Procurement.gs
+│       ├── ProcurementDemoSeed.gs
+│       └── Returns.gs
 ├── tests/
-│   ├── apps-script.test.mjs         Apps Script backend tests
-│   ├── gas-mock.mjs                 Google Apps Script mock environment
-│   ├── e2e-features.mjs             Browser feature tests
-│   ├── e2e-offline.mjs              Offline/PWA tests
-│   ├── compat-win7.mjs              Windows 7 browser compatibility tests
-│   └── package.json                 Test-only dependencies
-│
-├── windows-kit/                     Windows 7 local-server package
-│
-└── src/                             NEXT.JS PREVIEW HOST ONLY
-    ├── app/                          Next.js app shell/API/download scaffolding
-    ├── db/                           Drizzle/preview database scaffolding
-    └── lib/                          Preview-host utilities
+│   ├── apps-script.test.mjs
+│   ├── gas-mock.mjs
+│   ├── e2e-features.mjs
+│   ├── e2e-offline.mjs
+│   ├── compat-win7.mjs
+│   └── package.json
+├── windows-kit/
+├── docs/
+│   └── REGRESSION-AND-RELEASE-LOG.md
+├── src/                       preview-host scaffold, not POS runtime
+├── package.json
+├── next.config.ts
+└── .github/workflows/ci-publish.yml
 ```
 
-The file structure above is a high-level guide updated for the modules now present in the repository; it is not an exhaustive generated tree. The original 1 October 2026 audit is retained as historical context only. New modules should be added to the corresponding `public/pos/js` and `public/pos/css` locations and wired through `app.js` rather than creating a second application architecture.
-
----
-
-## Running the POS
-
-The POS runtime does not require Next.js, React or a build step.
-
-Any static HTTP server can serve `public/pos` because ES modules do not work reliably from `file://` URLs.
-
-```bash
-cd public/pos
-python3 -m http.server 8080
-```
-
-Then open:
-
-```text
-http://localhost:8080
-```
-
-The app starts in demo/local mode and uses sample data in the browser.
-
----
-
-## Connecting Google Sheets
-
-1. Create a Google Sheet.
-2. Open **Extensions → Apps Script**.
-3. Paste the complete contents of `public/pos/apps-script/Code.gs`.
-4. If procurement is required, also add `Procurement.gs`.
-5. If returns/exchanges are required, also add `Returns.gs`.
-6. Save the Apps Script project.
-7. Deploy as a **Web app**.
-8. Use **Execute as: Me**.
-9. Use **Who has access: Anyone** for the current simple deployment model.
-10. Copy the `/exec` URL.
-11. In FreshMart POS open **Settings → Data storage & sync** and connect the URL.
-
-The backend creates the required core tabs automatically. Procurement and Returns extensions create their own tabs when their bootstrap actions are used.
-
-### Optional API key
-
-`Code.gs` supports a shared `API_KEY`. If enabled, enter the same key in POS Settings.
-
-After changing Apps Script code, deploy a **new version** through **Manage deployments**. Editing the script without redeploying does not update the `/exec` endpoint.
-
----
-
-## Storage modes
-
-| Mode | Offline | Data location | Recommended use |
-|---|---:|---|---|
-| **This PC only** | Yes | IndexedDB | Single-terminal demo or standalone use |
-| **This PC + Google Sheets** | Yes | IndexedDB + Google Sheets | Recommended normal operation |
-| **Google Sheets live** | No | Google Sheets | Strict live-sheet operation |
-
-### Offline-first flow
-
-In hybrid mode:
-
-1. The POS writes to IndexedDB first.
-2. A unique `opId` is added to the outbox.
-3. The cashier can continue working without waiting for Google Sheets.
-4. When online, queued operations are sent to Apps Script.
-5. `SyncLog` prevents duplicate application of the same operation.
-6. Fresh data is downloaded and merged back into the local state.
-
-The router also guards against stale asynchronous navigation results so a slower page request cannot replace a page the user has already navigated away from.
-
----
-
-## Backups and PWA
-
-### PWA
-
-The application can be installed from supported Chrome/Edge browsers. The service worker caches the application shell so the POS can start offline.
-
-Whenever a file under `public/pos` is changed:
-
-1. Bump the `VERSION` in `public/pos/sw.js`.
-2. Verify the changed assets are included in the service-worker cache list.
-3. Run the browser tests.
-4. Deploy.
-
-### Backups
-
-The application supports:
-
-- Local IndexedDB storage
-- Download/restore data files
-- Optional PC folder backup through the File System Access API on supported browsers
-- Daily backup copies in the configured backup folder
-
-A future production backup layer should also include scheduled cloud-side Sheet snapshots and restore procedures.
-
----
-
-## Demo data
-
-The POS includes demo/sample data for development and testing.
-
-The demo environment includes grocery products, prices, tax information and sample sales. Procurement has a separate demo seed script.
-
-Do not treat demo customers, invoices, suppliers or loyalty records as real business data.
-
----
-
-## Testing
-
-The repository contains both backend and browser-level tests.
-
-### Apps Script tests
-
-```bash
-node tests/apps-script.test.mjs
-```
-
-### Feature tests
-
-```bash
-node tests/e2e-features.mjs
-```
-
-### Offline tests
-
-```bash
-node tests/e2e-offline.mjs
-```
-
-### Windows 7 compatibility
-
-```bash
-node tests/compat-win7.mjs
-```
-
-Playwright/Chromium is used by the browser-level tests. CI also performs static validation and browser checks.
-
-### Required regression coverage for every new module
-
-Every new module should be checked for:
-
-- Initial load
-- Navigation into and out of the page
-- Empty state
-- Loading state
-- Error state
-- Offline state where applicable
-- Google Sheets sync state where applicable
-- Modal open/close/cancel controls
-- Search/filter controls
-- Scrolling tables and sticky headers
-- Mobile/narrow viewport layout
-- CSV export where provided
-- Refresh after data changes
-- Back/forward navigation
-- Service-worker asset caching
-
----
-
-## Development standards
-
-The recent UI regressions demonstrate why new modules must follow the existing component patterns rather than inventing separate page behavior.
-
-### UI standards
-
-- Use the shared `.card`, `.card-head`, `.card-body`, `.btn`, `.input`, `.table` and modal patterns.
-- Use the global page title/subtitle in the top bar; do not duplicate long page headings inside modules unless the content genuinely needs one.
-- Keep module subtitles short enough that action buttons remain on the same row.
-- Use the same spacing scale as existing modules.
-- Keep modal Cancel/Close buttons functional.
-- Use opaque sticky table headers with an isolated scrolling container.
-- Avoid page-specific positioning/z-index hacks unless they solve a documented browser issue.
-
-### Data standards
-
-- Read from local state/IndexedDB first.
-- Do not make page navigation wait unnecessarily for a network request when cached data is available.
-- Use navigation-generation guards for asynchronous page loads.
-- Make writes idempotent.
-- Use server-side locking for stock-changing operations.
-- Never silently discard failed sync operations.
-
-### Cashier identity
-
-The current demo operator is **Anand Ibrahim / Anand I**, Counter 1. This is not intended to be the final authentication model. Any future staff/authentication implementation must replace hard-coded identity values across receipts, audit records, drawer sessions and day closing.
-
----
-
-## Historical recommended development order — 1 October baseline
-
-The following order was proposed in the original audit and is retained as historical context. It is not a current work queue; consult the 21 October status section and regression log for current priorities.
-
-Based on the 1 October 2026 audit, the recommended engineering sequence is:
-
-1. **Fix and regression-test the three sticky-table modules** — Day Close, Audit Log and Loyalty.
-2. **Centralize Cash Drawer, Day Close and Audit Log data in Google Sheets with offline sync.**
-3. **Complete Loyalty checkout integration and central loyalty ledger.**
-4. **Introduce cashier/staff authentication, roles and permissions.**
-5. **Harden sync/performance for larger Sheets datasets.**
-6. **Complete advanced Reports/GST/profit analytics.**
-7. **Add payment-gateway and hardware integrations if required for the target deployment.**
-8. **Expand inventory/purchasing/customer/promotions features.**
-9. **Only then move into optional delivery, recipe, nutrition, notifications, multilingual and multi-store features.**
-
-This order keeps the transaction and data-consistency foundation ahead of feature expansion and reduces the risk of building more UI on top of local-only implementations that later need to be rewritten.
-
----
-
-## Deployment notes
-
-### GitHub Pages / static hosting
-
-Upload the contents of `public/pos` to the static host and preserve:
-
-- `index.html`
-- `manifest.webmanifest`
-- `sw.js`
-- `.nojekyll`
-- `icons/`
-- `css/`
-- `js/`
-- `vendor/`
-- `apps-script/` only as source/reference; Apps Script itself is deployed separately
-
-### Windows 7
-
-The repository includes `windows-kit/` for the legacy supported browser environment. Use the included local server rather than opening `index.html` directly.
-
-Supported legacy browser targets are documented in the Windows kit and compatibility test.
-
----
-
-## Important architectural note
-
-The repository contains a Next.js/PostgreSQL/Drizzle scaffold because the original preview environment was generated from that stack. **Do not move the FreshMart POS runtime into that stack unless there is an explicit architectural decision to do so.** The current application deliberately uses `public/pos` with Google Sheets + Apps Script + IndexedDB because that is the deployment model being developed and tested.
+Always verify actual paths against the current branch before editing; files and names may evolve.
+
+## 7. Apps Script backend and data boundaries
+
+Apps Script sources are in `public/pos/apps-script/`:
+
+- **`Code.gs`:** core POS API and core data actions.
+- **`Procurement.gs`:** supplier/purchase backend actions.
+- **`Returns.gs`:** returns/exchanges backend actions.
+- **`ProcurementDemoSeed.gs`:** procurement demo seed data.
+
+The core data path includes products, sales, sale items, stock movements, settings and sync logging. Procurement and Returns add their relevant data structures/actions. Cash Drawer, Day Close, Audit Log and parts of Loyalty remain local operational stores in the documented implementation; this is not sufficient for reliable multi-counter operation until central persistence, authorization and synchronization are implemented and verified.
+
+For test parity, load all required Apps Script files into the same test VM/global context, as Apps Script does. Mock-backend success must be followed by disposable live-Sheet verification for release-critical operations.
+
+## 8. Automated tests and their limits
+
+Current test areas include:
+
+- `tests/apps-script.test.mjs` — Apps Script regression tests.
+- `tests/e2e-features.mjs` — browser feature/end-to-end checks.
+- `tests/e2e-offline.mjs` — offline and PWA behavior.
+- `tests/compat-win7.mjs` — legacy browser/Windows compatibility checks.
+- `tests/gas-mock.mjs` — Apps Script test harness.
+- `.github/workflows/ci-publish.yml` — CI, release checks and deployment jobs.
+
+Automated tests are intended to catch repeatable regressions before staging. They cannot prove every workflow works, nor can mocks prove live Google permissions, quotas, deployment configuration, real Sheet contents, printer/scanner/scale behavior or every target device. Expand tests when a real defect is found and record exactly what the test does and does not prove.
+
+## 9. Planned roadmap — retained
+
+These are planned/extended capabilities. Their presence in this list does not imply that they are implemented.
+
+### Payments and checkout
+- Multiple UPI payment IDs with a configurable default.
+- Payment gateway integrations with verified callbacks/webhooks, pending/failed-payment recovery, reconciliation, refunds and duplicate-payment protection.
+- Split/multiple tender where required and payment reference IDs on invoices.
+
+### Hardware
+- Thermal receipt printers, including compatible ESC/POS devices.
+- Barcode and QR scanners.
+- Weighing-machine integration and weighted barcodes.
+- Cash-drawer pulse through compatible printers, label-printer profiles, customer display and hardware diagnostics.
+- Clear hardware/browser compatibility guidance and a suitable bridge where browser APIs are insufficient.
+
+### Delivery and logistics
+- Delivery orders, slots, assignment and status tracking.
+- ETA/ETD, hand-off workflows, delivery-provider/third-party logistics integration and customer notifications.
+
+### Finance, accounting and reporting
+- Expense and cash-flow tracking.
+- Profit/margin, category, cashier and payment reconciliation reports.
+- GST summaries and agreed accounting exports.
+- Supplier balances, purchase orders, purchase returns and supplier payment tracking.
+- Tally migration and ERP/accounting/ecommerce/other-app integrations.
+
+### Industry-specific modules
+- Grocery: product images, weighted items, expiry/batch tracking, stocktake and fast barcode billing.
+- Restaurant/café: menus, modifiers, recipes and table/order workflows where required.
+- Apparel/footwear: size/color variants and product matrices.
+- Additional industry-specific fields, workflows and terminology without maintaining a separate code fork for every client.
+
+### Themes, onboarding and plugins
+- Client- and industry-specific dashboards, navigation and branding.
+- Store logo, colors, favicon, receipt design, language and accessibility preferences.
+- Guided setup for business type, store profile, administrator, storage/backend, branding and initial modules.
+- Enable/disable plugins with declared dependencies, settings, permissions, compatibility and migration rules.
+- Grocery product-image helper/plugin.
+- Tally migration plugin and ERP/other-application integrations.
+- Plugin catalog/marketplace, safe updates and rollback.
+- Non-technical founder onboarding with sensible defaults and no manual code editing.
+
+### Platform expansion
+- Server-authoritative staff/session authorization.
+- Reliable cross-device sync, conflict handling, store-scoped isolation and multi-branch management.
+- Central administration, backup/restore verification and operational diagnostics.
+- Licensing/subscriptions if required by the commercial model.
+- Tamil/English and other languages, promotions, complete loyalty checkout integration, CRM insights, notifications and advanced analytics.
+
+## 10. Working and release rules
+
+1. **One candidate branch:** record the branch and exact commit in the regression ledger. Avoid parallel branches fixing the same defect.
+2. **Staging first:** test candidate builds against disposable data in `POS-v2-staging`.
+3. **No implicit production release:** production publication requires an explicit release decision and a workflow configured to enforce it.
+4. **Evidence-based status:** distinguish code present, automated tests, live-backend verification and target-device verification.
+5. **Protect test data:** do not clear local storage or replace a Sheet without a known backup and purpose.
+6. **Focused fixes:** reproduce a defect, identify the root cause, add a regression test, run CI, deploy to staging, then execute the relevant live acceptance check.
+7. **Keep roadmap separate from acceptance:** preserve future features while clearly marking what is not yet delivered.
+8. **No claims of zero bugs:** release readiness is based on a defined acceptance suite and known limitations, not an absolute guarantee.
+
+## 11. Current next steps
+
+1. Reconcile the source commit, staging build and production-facing build; the three must not be assumed identical.
+2. Verify that production publication is gated explicitly rather than triggered by routine source pushes.
+3. Reproduce the outstanding items in the regression ledger on staging, beginning with operator switching/role-based navigation, settings persistence, returns and sync/data isolation.
+4. Fix only reproducible defects, add targeted tests, run CI and deploy candidates to staging.
+5. Complete live disposable-Sheet and target-device checks and record evidence for every acceptance item.
+6. Reassess whether a clean POS v3 is warranted only after source, branches, deployment versions and Sheet mappings are reconciled.
+
+**Related documentation:** [Regression and Release Log](docs/REGRESSION-AND-RELEASE-LOG.md) · [Security Phases](SECURITY_PHASES.md)
